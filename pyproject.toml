@@ -16,6 +16,7 @@ dev = [
 ]
 
 [project.scripts]
+agentic-logger = "agentic_logger.cli:main"
 agentic-logger-mcp = "agentic_logger.mcp_server:main"
 
 [build-system]
