@@ -1,0 +1,22 @@
+Agentic Coding Agent Log Management and Token Optimization
+
+Research Focus:
+1. LogSieve - semantic-preserving log simplification for CI logs (GitHub Actions), achieving 42% line reduction and 40% token savings with 0.93 semantic similarity
+2. CelerLog - dynamic routing mechanism that classifies logs into "dense" (statistical patterns) and "sparse" (semantic reasoning) types, reducing 80-94% token consumption and 86-90% LLM calls
+3. Template caching approaches (LILAC, LUNAR, LogBatcher) - caching repeated log patterns and only invoking LLM for novel patterns
+4. Best practices for structured logging in AI coding agents
+5. Token-efficient log processing techniques for LLM consumption
+6. Existing tools and frameworks for agent log management
+
+Target Applications:
+- Coding Agent execution logs (decision points, tool calls, errors)
+- CI/CD pipeline logs (GitHub Actions, GitLab CI)
+- Application runtime logs
+- Hybrid processing: real-time extraction + batch analysis
+
+Expected Discoveries:
+- Academic papers on log simplification and token optimization (2024-2026)
+- Open source implementations of log filtering/compression tools
+- Industry best practices for structured logging
+- Comparison of different approaches (statistical vs semantic vs hybrid)
+- Integration patterns with MCP (Model Context Protocol)
