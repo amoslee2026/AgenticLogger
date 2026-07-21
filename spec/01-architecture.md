@@ -53,19 +53,20 @@
 
 **组件清单**:
 
-| 组件 | 语言 | 包名 | 优先级 |
-|------|------|------|--------|
-| `agentic-logger-py` | Python | `agentic-logger` | P0 |
-| `agentic-logger-js` | Node.js | `@agentic/logger` | P0 |
-| `agentic-logger-sh` | Bash | `agentic_logger.sh` | P1 |
-| `agentic-logger-go` | Go | `agenticlogger` | P2 |
-| `agentic-logger-rs` | Rust | `agentic-logger` | P2 |
+| 组件                  | 语言    | 包名                  | 优先级 |
+| --------------------- | ------- | --------------------- | ------ |
+| `agentic-logger-py` | Python  | `agentic-logger`    | P0     |
+| `agentic-logger-js` | Node.js | `@agentic/logger`   | P0     |
+| `agentic-logger-sh` | Bash    | `agentic_logger.sh` | P1     |
+| `agentic-logger-go` | Go      | `agenticlogger`     | P2     |
+| `agentic-logger-rs` | Rust    | `agentic-logger`    | P2     |
 
 **统一 API 语义**:
 
 所有 SDK 提供相同的语义接口，确保日志格式一致。
 
 核心方法:
+
 - `info(message, **context)` - 一般信息
 - `warn(message, **context)` - 警告
 - `error(message, error=None, **context)` - 错误
@@ -81,13 +82,14 @@
 
 **后端选择**:
 
-| 后端 | 用途 | 优点 | 缺点 | 优先级 |
-|------|------|------|------|--------|
-| **JSONL** | 默认 | 流式、简单、可 grep | 查询慢 | P0 |
-| **SQLite** | 可选 | 索引快、单文件 | 写入并发受限 | P1 |
-| **PostgreSQL** | 未来 | 大规模、多用户 | 部署复杂 | P2 |
+| 后端                 | 用途 | 优点                | 缺点         | 优先级 |
+| -------------------- | ---- | ------------------- | ------------ | ------ |
+| **JSONL**      | 默认 | 流式、简单、可 grep | 查询慢       | P0     |
+| **SQLite**     | 可选 | 索引快、单文件      | 写入并发受限 | P1     |
+| **PostgreSQL** | 未来 | 大规模、多用户      | 部署复杂     | P2     |
 
 **默认配置**:
+
 - 日志文件路径: `./logs/agentic-{date}.jsonl`
 - 自动轮转: 每天 00:00 轮转
 - 保留策略: 默认 30 天
@@ -104,12 +106,12 @@
 
 **MCP Tools**:
 
-| Tool | 功能 | 参数 |
-|------|------|------|
-| `agentic_log_query` | 查询日志 | `level`, `tool`, `since`, `limit` |
-| `agentic_log_analyze` | 分析模式 | `time_range`, `focus` |
-| `agentic_log_stats` | 统计分析 | `since`, `group_by` |
-| `agentic_log_stream` | 实时流 | `level`, `tool` |
+| Tool                    | 功能     | 参数                                      |
+| ----------------------- | -------- | ----------------------------------------- |
+| `agentic_log_query`   | 查询日志 | `level`, `tool`, `since`, `limit` |
+| `agentic_log_analyze` | 分析模式 | `time_range`, `focus`                 |
+| `agentic_log_stats`   | 统计分析 | `since`, `group_by`                   |
+| `agentic_log_stream`  | 实时流   | `level`, `tool`                       |
 
 #### 2.3.2 CLI
 
@@ -117,12 +119,12 @@
 
 **命令**:
 
-| 命令 | 功能 | 示例 |
-|------|------|------|
-| `tail` | 实时查看 | `agentic-logger tail --level ERROR --follow` |
-| `query` | 查询过滤 | `agentic-logger query --tool bash --since 1h` |
-| `stats` | 统计分析 | `agentic-logger stats --group-by tool` |
-| `export` | 导出日志 | `agentic-logger export --format json` |
+| 命令       | 功能     | 示例                                            |
+| ---------- | -------- | ----------------------------------------------- |
+| `tail`   | 实时查看 | `agentic-logger tail --level ERROR --follow`  |
+| `query`  | 查询过滤 | `agentic-logger query --tool bash --since 1h` |
+| `stats`  | 统计分析 | `agentic-logger stats --group-by tool`        |
+| `export` | 导出日志 | `agentic-logger export --format json`         |
 
 #### 2.3.3 REST API
 
@@ -130,12 +132,12 @@
 
 **Endpoints**:
 
-| Endpoint | Method | 功能 |
-|----------|--------|------|
-| `/api/v1/logs` | GET | 查询日志 |
-| `/api/v1/stats` | GET | 统计分析 |
-| `/api/v1/analyze` | POST | 深度分析 |
-| `/api/v1/stream` | WebSocket | 实时流 |
+| Endpoint            | Method    | 功能     |
+| ------------------- | --------- | -------- |
+| `/api/v1/logs`    | GET       | 查询日志 |
+| `/api/v1/stats`   | GET       | 统计分析 |
+| `/api/v1/analyze` | POST      | 深度分析 |
+| `/api/v1/stream`  | WebSocket | 实时流   |
 
 ---
 
@@ -192,26 +194,26 @@ MCP Server 接收请求
 
 ### 4.1 写入 SDK
 
-| 语言 | 技术栈 | 依赖 |
-|------|--------|------|
-| Python | 纯 Python (无外部依赖) | `orjson` (可选，加速 JSON) |
-| Node.js | TypeScript + ESM | 无外部依赖 |
-| Bash | Bash 4.0+ | `jq` (可选) |
+| 语言    | 技术栈                 | 依赖                         |
+| ------- | ---------------------- | ---------------------------- |
+| Python  | 纯 Python (无外部依赖) | `orjson` (可选，加速 JSON) |
+| Node.js | TypeScript + ESM       | 无外部依赖                   |
+| Bash    | Bash 4.0+              | `jq` (可选)                |
 
 ### 4.2 存储后端
 
-| 后端 | 技术栈 |
-|------|--------|
-| JSONL | 纯文件 IO |
+| 后端   | 技术栈                      |
+| ------ | --------------------------- |
+| JSONL  | 纯文件 IO                   |
 | SQLite | `sqlite3` (Python stdlib) |
 
 ### 4.3 读取接口
 
-| 接口 | 技术栈 |
-|------|--------|
-| MCP | Python + `mcp` SDK |
-| CLI | Python + `click` |
-| REST | Python + `fastapi` |
+| 接口 | 技术栈              |
+| ---- | ------------------- |
+| MCP  | Python +`mcp` SDK |
+| CLI  | Python +`click`   |
+| REST | Python +`fastapi` |
 
 ---
 
@@ -238,13 +240,13 @@ MCP Server 接收请求
 
 ## 6. 性能目标
 
-| 指标 | 目标 |
-|------|------|
-| 写入延迟 | < 1ms (追加到文件) |
-| 读取延迟 (CLI query) | < 1s (1000 行) |
-| 读取延迟 (MCP query) | < 2s (10000 行) |
-| 并发写入 | 1000 QPS (单机) |
-| 日志大小 | 单文件 < 1GB (自动轮转) |
+| 指标                 | 目标                    |
+| -------------------- | ----------------------- |
+| 写入延迟             | < 1ms (追加到文件)      |
+| 读取延迟 (CLI query) | < 1s (1000 行)          |
+| 读取延迟 (MCP query) | < 2s (10000 行)         |
+| 并发写入             | 1000 QPS (单机)         |
+| 日志大小             | 单文件 < 1GB (自动轮转) |
 
 ---
 

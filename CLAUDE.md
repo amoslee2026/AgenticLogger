@@ -3,19 +3,8 @@
 ## Project Overview
 
 AgenticLogger 是一个为 Coding Agent 设计的高效日志管理系统。核心目标是通过专门的工具进行日志生成和 Agentic Reading，只提取有效信息送给 LLM，从而节省推理时间和 token 消耗。
-
-## Common Development Commands
-
-由于项目尚未初始化，以下命令待项目搭建后补充：
-
-```bash
-# 项目初始化（待确定技术栈后补充）
-# 构建命令
-# 测试命令
-# 代码检查命令
-```
-
 ## High-Level Architecture
+
 
 ### 核心组件（待实现）
 
@@ -33,18 +22,12 @@ AgenticLogger 是一个为 Coding Agent 设计的高效日志管理系统。核�
 
 ### 设计原则
 
+- **output README.md in english**
 - **Token Efficiency**: 最小化送入 LLM 的 token 数量
 - **Information Density**: 最大化每条信息的信息密度
 - **Structured Output**: 日志输出应该是结构化的，便于解析
 - **Selective Reading**: 不是读取所有日志，而是智能选择关键信息
-
-## Technology Stack
-
-待确定。建议考虑：
-- Python (with uv) - 基于现有环境配置
-- 结构化日志格式 (JSON/Protocol Buffers)
-- 轻量级嵌入模型用于信息筛选
-
+- **Don't push apikey/token into remote**: it's a pubulic repo in remote, be security
 ## Development Guidelines
 
 - 遵循全局 CLAUDE.md 中的所有规则
