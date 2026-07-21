@@ -2,6 +2,8 @@
 
 @spec-ref: spec/05-storage.md §4 — SQLite + WAL 后端
 @spec-ref: spec/05-storage.md §5.2 — SQLite 循环写入
+@last-changed: 2026-07-21
+@log-module: agentic_logger.storage.sqlite
 
 Features:
 - WAL journal mode for concurrent reads during writes
