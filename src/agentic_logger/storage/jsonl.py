@@ -220,10 +220,16 @@ class JSONLBackend:
             raise RuntimeError(f"Rotation failed, original file restored: {e}") from e
 
     def _recover_from_interrupted_rotation(self) -> None:
-        """Recover from a rotation that was interrupted mid-way."""
+        """Recover from a rotation that was interrupted mid-way.
+
+        For file `name.jsonl.rotating`, strip `.rotating` → `name.jsonl`.
+        Uses stem (which strips last suffix) instead of with_suffix
+        (which would produce name.jsonl.jsonl).
+        """
         parent = self.file_path.parent
         for f in parent.glob("*.rotating"):
-            original = f.with_suffix(".jsonl")
+            # f = name.jsonl.rotating → f.stem = name.jsonl
+            original = f.parent / f.stem
             if not original.exists():
                 f.rename(original)
             else:
