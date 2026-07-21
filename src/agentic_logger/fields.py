@@ -2,6 +2,8 @@
 
 @spec-ref: spec/03-write-sdk.md §2.3 — 自动填充字段
 @spec-ref: spec/05-storage.md §2.2 — 日志文件命名
+@last-changed: 2026-07-21
+@log-module: agentic_logger.fields
 
 Every log entry is augmented with four auto-filled fields so the caller
 never has to supply them manually:
