@@ -466,11 +466,14 @@ class AgentLogger:
         if "module" not in entry or entry["module"] is None:
             entry["module"] = module or auto_module(depth=3)
 
-        # Fill standard fields
-        entry["tid"] = tid
-        entry["dur"] = dur
-        entry["error_code"] = str(error_code) if error_code else None
-        if ctx:
+        # Fill standard fields (only if not already in entry)
+        if "tid" not in entry:
+            entry["tid"] = tid
+        if "dur" not in entry:
+            entry["dur"] = dur
+        if "error_code" not in entry:
+            entry["error_code"] = str(error_code) if error_code else None
+        if ctx and "ctx" not in entry:
             entry["ctx"] = ctx
 
         # Auto-fill ts/pid/rid/seq
