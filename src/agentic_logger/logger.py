@@ -93,6 +93,10 @@ class AgentLogger:
     """Structured logger for Coding Agents.
 
     @spec-ref: spec/03-write-sdk.md — AgentLogger API
+    @agent-tag: core-logger
+    @spec-why: One instance per run ensures run-level isolation (rid, seq) without cross-run contamination.
+    @spec-invariant: Does NOT support shared state across processes — each process must create its own instance.
+    @last-changed: 2026-07-21
 
     Each instance creates a separate log file per run, named::
 
