@@ -271,6 +271,11 @@ class AgentLogger:
         """Log the currently-handled exception in one step.
 
         @spec-ref: spec/03-write-sdk.md — 评审修复 U07
+        @agent-tag: exception-handling
+        @agent-caution: Must be called inside an except block — raises ValueError otherwise.
+        @spec-why: Single-call convenience for exception logging (capture + save traceback + write ERROR entry).
+        @spec-invariant: Does NOT re-raise the exception — caller must handle propagation explicitly.
+        @last-changed: 2026-07-21
 
         Must be called **inside** an ``except`` block.  Automatically
         captures the traceback via :func:`sys.exc_info`, saves it to
