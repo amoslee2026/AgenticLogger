@@ -1,7 +1,8 @@
 # AgenticLogger 设计规范
 
-**版本**: v1.0.0  
+**版本**: v1.1.0  
 **创建时间**: 2026-07-21  
+**更新时间**: 2026-07-21  
 **状态**: Draft
 
 ---
@@ -10,13 +11,13 @@
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [01-architecture.md](./01-architecture.md) | 系统架构概览 | ✅ |
-| [02-log-format.md](./02-log-format.md) | 日志格式规范 (JSONL Schema) | ✅ |
-| [03-write-sdk.md](./03-write-sdk.md) | 写入 SDK API 设计 | ✅ |
-| [04-read-interface.md](./04-read-interface.md) | 读取接口设计 (MCP/CLI/REST) | ✅ |
-| [05-storage.md](./05-storage.md) | 存储后端设计 | ✅ |
-| [06-implementation.md](./06-implementation.md) | 实施计划 | ✅ |
-| [07-testing.md](./07-testing.md) | 测试策略 | ✅ |
+| [01-architecture.md](./01-architecture.md) | 系统架构概览 | ✅ v1.1 |
+| [02-log-format.md](./02-log-format.md) | 日志格式规范 (JSONL Schema) | ✅ v1.1 |
+| [03-write-sdk.md](./03-write-sdk.md) | 写入 SDK API 设计 | ✅ v1.1 |
+| [04-read-interface.md](./04-read-interface.md) | 读取接口设计 (MCP/CLI) | ✅ v1.1 |
+| [05-storage.md](./05-storage.md) | 存储后端设计 | ✅ v1.1 |
+| [06-implementation.md](./06-implementation.md) | 实施计划 (Python MVP) | ✅ v1.1 |
+| [07-testing.md](./07-testing.md) | 测试策略 | ✅ v1.1 |
 
 ---
 
@@ -29,22 +30,11 @@
 - 通过专门的工具进行**高效的信息提取和分析**
 - 只提取有效信息送给 LLM，**节省推理时间和 token 消耗**
 
-**目标用户**:
-- **写入端**: Coding Agent (Claude, Cursor, Copilot 等) 生成的程序/脚本
-- **读取端**: AI Agent (通过 MCP)、人类开发者 (通过 CLI)、其他系统 (通过 REST API)
-
----
-
-## 设计原则
-
-| 原则 | 说明 |
-|------|------|
-| **结构化优先** | 日志写入时即为结构化，避免后续解析 |
-| **独立命名空间** | 独立库，不与标准 `logging` 混淆 |
-| **语义化 API** | 方法名清晰表达意图 (`tool_call`, `file_op`, `decision`) |
-| **多语言支持** | 写入 SDK 支持 Python/Node.js/Bash 等 |
-| **多接口读取** | MCP (AI Agent) + CLI (人类) + REST (系统集成) |
-| **流式友好** | 默认 JSONL 格式，支持 `tail -f` 实时监控 |
+**设计原则** (v1.1):
+- **Agent 优先**: 优先保证 Agent 高效访问，人类可读性放低
+- **信息丰富**: 包含 rid/tid/pid/dur/ErrorCode/ctx 等丰富字段
+- **Python MVP**: Python SDK 先行，验证后扩展多语言
+- **双后端**: JSONL (小文件) + SQLite WAL (大文件/多进程)
 
 ---
 
@@ -53,56 +43,82 @@
 ### 写入日志 (Python SDK)
 
 ```python
-from agentic_logger import agent_log
+from agentic_logger import AgentLogger
 
-# 基础日志
-agent_log.info("Processing started", module="parser")
+logger = AgentLogger(program="my_agent", command="main")
+
+# 基础日志 (自动填充 ts/pid/rid)
+logger.info("Processing started", module="parser", ctx={"file": "data.json"})
 
 # 工具调用
-agent_log.tool_call(
+logger.tool_call(
     tool="bash",
-    command="npm install express",
-    exit_code=0,
-    duration_ms=1234,
-    stdout_summary="added 50 packages"
+    cmd="npm install express",
+    exit=0,
+    dur=1234,
+    stdout="added 50 packages"
 )
 
-# 文件操作
-agent_log.file_op(
-    operation="write",
-    path="/path/to/file.py",
-    success=True,
-    size_bytes=1024
-)
+# 错误 (error_code 必填)
+logger.error("Build failed", module="builder", error_code="BUILD_FAIL")
 
-# 决策点
-agent_log.decision(
-    choice="use_async",
-    alternatives=["sync", "async"],
-    reason="IO-bound workload"
-)
-```
-
-### 读取日志 (CLI)
-
-```bash
-# 实时查看错误
-agentic-logger tail --level ERROR --follow
-
-# 查询工具调用
-agentic-logger query --tool bash --exit-code 1 --since 1h
-
-# 统计分析
-agentic-logger stats --group-by tool --since 24h
+# 决策记录
+logger.decision(choice="use_async", alts=["sync"], reason="IO-bound")
 ```
 
 ### 读取日志 (MCP Tool)
 
 ```
-Call MCP: agentic_log_query(level="ERROR", since="2026-07-21T00:00:00Z", limit=100)
+Call MCP: agentic_log_query(rid="550e8400", level="ERROR", min_dur=1000)
+Call MCP: agentic_log_trace(rid="550e8400")
 Call MCP: agentic_log_analyze(focus="errors", time_range="24h")
-Call MCP: agentic_log_stats(group_by="tool", since="24h")
+Call MCP: agentic_log_stats(group_by="error_code", since="24h")
 ```
+
+### 读取日志 (CLI)
+
+```bash
+# 多条件查询
+agentic-logger query --rid 550e8400 --level ERROR --min-dur 1000 --order-by dur_desc
+
+# 链路追踪
+agentic-logger trace --rid 550e8400 --include-traceback
+
+# 统计分析
+agentic-logger stats --group-by error_code --since 24h
+```
+
+---
+
+## v1.1 变更摘要 (相比 v1.0)
+
+| 变更 | v1.0 | v1.1 |
+|------|------|------|
+| **实施策略** | 多语言并行 | Python MVP 优先 |
+| **设计目标** | 人类可读优先 | Agent 高效访问优先 |
+| **存储后端** | JSONL → SQLite → PostgreSQL | JSONL + SQLite WAL (无 PostgreSQL) |
+| **读取接口** | MCP + CLI + REST API + SDK | MCP + CLI + SDK (无 REST API) |
+| **日志字段** | 基础字段 | 丰富字段: rid/tid/pid/dur/error_code/ctx |
+| **文件命名** | `agentic-{date}.jsonl` | `{program}_{cmd}_{date}_{time}.jsonl` |
+| **大文件策略** | 按日轮转 | 循环写入 |
+| **查询参数** | 基础过滤 | 丰富参数: 所有字段可检索 |
+
+---
+
+## 日志格式核心字段
+
+| 字段 | 说明 |
+|------|------|
+| `ts` | 毫秒级时间戳 |
+| `level` | 日志级别 |
+| `module` | 模块/class/函数名 |
+| `msg` | 简短描述 |
+| `tid` | 堆栈跟踪引用 ID |
+| `rid` | 运行 ID (串联一次完整流程) |
+| `pid` | 进程 ID |
+| `dur` | 操作耗时 (ms) |
+| `error_code` | 结构化错误码 |
+| `ctx` | 关键上下文键值对 |
 
 ---
 
@@ -110,7 +126,6 @@ Call MCP: agentic_log_stats(group_by="tool", since="24h")
 
 - **技术调研**: `research_reports/agentic-log-management/report.md`
 - **执行摘要**: `research_reports/agentic-log-management/executive_summary.md`
-- **项目想法**: `idea/` (待生成)
 
 ---
 
@@ -119,3 +134,4 @@ Call MCP: agentic_log_stats(group_by="tool", since="24h")
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
 | 2026-07-21 | v1.0.0 | 初始版本 |
+| 2026-07-21 | v1.1.0 | Python MVP 优先; Agent 优先设计; 丰富字段; 双后端; 新文件命名; 循环写入; 移除 REST/PostgreSQL |
