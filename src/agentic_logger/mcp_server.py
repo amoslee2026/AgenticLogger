@@ -55,6 +55,11 @@ def _merge_query(
     """Query across all backends with time-range pruning + merge sort.
 
     @spec-ref: spec/04-read-interface.md §5.1 — 跨后端归并排序
+    @agent-tag: query-merge
+    @agent-caution: Fetches up to 100K entries per backend before pagination — may consume significant memory for large logs.
+    @spec-why: Time-range pruning skips irrelevant files early, reducing I/O for queries spanning many runs.
+    @spec-invariant: Does NOT stream results — loads all matches into memory before sorting (acceptable for typical agent log volumes).
+    @last-changed: 2026-07-21
     """
     # Extract pagination from filters (with safe defaults)
     limit = filters.pop("limit", 100)
