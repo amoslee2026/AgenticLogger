@@ -1,6 +1,8 @@
 """Standard error code taxonomy for structured logging.
 
 @spec-ref: spec/02-log-format.md §9 — 标准错误码字典 (ErrorCode)
+@last-changed: 2026-07-21
+@log-module: agentic_logger.error_codes
 
 Format: ``{CATEGORY}_{SPECIFIC}`` (UPPER_SNAKE_CASE).
 
