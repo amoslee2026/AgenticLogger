@@ -1,11 +1,24 @@
-"""JSONL storage backend.
+"""JSONL (JSON Lines) storage backend.
 
-spec 05-storage.md §3: JSONL 后端
-- 流式追加写入
-- 循环写入安全轮转 (先改名→创建新文件→删除旧文件)
-- 堆栈跟踪分离存储 (.tracebacks)
+@spec-ref: spec/05-storage.md §3  — JSONL 后端
+@spec-ref: spec/05-storage.md §5.1 — JSONL 循环写入
+@spec-ref: spec/05-storage.md §6   — 堆栈跟踪分离存储
+
+Each log entry is a single line of JSON, appended to the file.  The
+backend supports:
+
+- **Streaming append** — one ``open(…, 'a')`` per write; safe for
+  ``tail -f`` consumers.
+- **Safe circular rotation** — rename → create → delete ordering
+  eliminates the data-loss window if the process crashes mid-rotation.
+- **Separate traceback storage** — large stack traces live in a
+  ``.tracebacks`` sidecar file keyed by ``tid``; the main log stays
+  lightweight.
+- **Multi-process safety** — ``fcntl.flock`` guards traceback writes
+  when several processes append to the same sidecar.
 """
 
+import fcntl
 import json
 import os
 import re
@@ -14,19 +27,21 @@ from pathlib import Path
 
 
 class JSONLBackend:
-    """JSONL (JSON Lines) storage backend.
+    """JSONL storage backend with optional circular rotation.
 
-    Each log entry is one line of JSON. Supports:
-    - Streaming append writes
-    - Circular rotation with safe ordering
-    - Separate traceback storage
+    @spec-ref: spec/05-storage.md §3 — JSONL 后端
 
     Args:
-        file_path: Path to the JSONL log file.
-        max_files: Max number of log files to keep (circular).
-        max_size_mb: Max file size in MB before rotation.
-        circular: Enable circular write mode.
-        global_ctx: Global context dict written to file header.
+        file_path: Path to the ``.jsonl`` log file.  Parent directories
+            are created automatically.
+        max_files: Maximum number of rotated files to retain.  Only
+            meaningful when *circular=True*.
+        max_size_mb: File-size threshold (MiB) that triggers rotation.
+        circular: Enable circular write mode.  When *False* (default),
+            the file grows without bound.
+        global_ctx: Arbitrary key-value pairs written as the first line
+            of a new log file (``level="__GLOBAL_CTX__"``).  Useful for
+            recording the program name, command, git branch, etc.
     """
 
     def __init__(
@@ -45,16 +60,24 @@ class JSONLBackend:
         self._global_ctx = global_ctx or {}
         self._write_count = 0
 
-        # Recover from interrupted rotation
+        # Recover from a rotation that was interrupted by a crash on a
+        # previous run (see _safe_rotate for the forward path).
         self._recover_from_interrupted_rotation()
-        # Write global context to new file header
+
+        # Write global context header only when the file is brand new.
         if not self.file_path.exists() or self.file_path.stat().st_size == 0:
             self._write_global_context()
 
-    # --- Write API ---
+    # ------------------------------------------------------------------
+    # Write API
+    # ------------------------------------------------------------------
 
     def write(self, entry: dict) -> None:
-        """Write a single log entry."""
+        """Append a single log entry as one JSON line.
+
+        If *circular* mode is enabled and the current file has exceeded
+        *max_size_mb*, a safe rotation is performed before writing.
+        """
         if self.circular and self._should_rotate():
             self._safe_rotate()
 
@@ -64,39 +87,47 @@ class JSONLBackend:
         self._write_count += 1
 
     def write_batch(self, entries: list[dict]) -> None:
-        """Write multiple log entries in one IO operation."""
+        """Append multiple log entries in a single I/O operation."""
         lines = [json.dumps(e, ensure_ascii=False, default=str) for e in entries]
         with open(self.file_path, "a", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
         self._write_count += len(entries)
 
-    def save_traceback(self, tid: str, traceback_text: str, exc_type: str, exc_msg: str) -> None:
-        """Save traceback to separate file, keyed by tid.
+    def save_traceback(
+        self, tid: str, traceback_text: str, exc_type: str, exc_msg: str
+    ) -> None:
+        """Persist a stack trace to the ``.tracebacks`` sidecar file.
 
-        Uses file locking (fcntl) for multi-process safety.
-        spec 05-storage.md §6: 堆栈跟踪分离存储
+        @spec-ref: spec/05-storage.md §6 — 堆栈跟踪分离存储
+
+        Newlines inside *traceback_text* are escaped to ``\\n`` so that
+        each traceback record stays on exactly one line (preserving the
+        JSONL invariant of the main log).
+
+        Multi-process safety is achieved with ``fcntl.flock(LOCK_EX)``:
+        if two processes try to save tracebacks concurrently, the second
+        one blocks until the first releases the lock.
         """
         tb_path = self._traceback_path()
         tb_path.parent.mkdir(parents=True, exist_ok=True)
-        # Sanitize: replace newlines in traceback to keep one-line-per-record
+
+        # Escape newlines so one traceback == one line in the sidecar.
         safe_tb = traceback_text.replace("\n", "\\n")
         line = f"{tid}|{exc_type}|{exc_msg}|{safe_tb}\n"
 
         with open(tb_path, "a", encoding="utf-8") as f:
             try:
-                import fcntl
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 f.write(line)
                 f.flush()
             finally:
-                try:
-                    import fcntl
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     def get_traceback(self, tid: str) -> dict | None:
-        """Retrieve traceback by tid."""
+        """Look up a traceback by its *tid*.
+
+        Returns ``None`` if no matching record exists.
+        """
         tb_path = self._traceback_path()
         if not tb_path.exists():
             return None
@@ -112,13 +143,22 @@ class JSONLBackend:
                     }
         return None
 
-    # --- Query API ---
+    # ------------------------------------------------------------------
+    # Query API
+    # ------------------------------------------------------------------
 
     def query(self, **filters) -> list[dict]:
-        """Query logs with filters.
+        """Scan the log file and return entries matching *filters*.
 
-        Supported filters: level, module, error_code, tool, rid, pid, tid,
-                          min_dur, max_dur, since, until, limit, offset.
+        Supported filter keys:
+            level, module, error_code, tool, rid, pid, tid,
+            min_dur, max_dur, since, until, keyword,
+            limit (default 1000), offset, order_by.
+
+        The ``module`` filter supports ``*`` glob wildcards
+        (e.g. ``"agent.*"``).  The ``keyword`` filter performs a
+        case-insensitive substring search across the entire serialised
+        entry (including nested ``ctx`` values).
         """
         limit = filters.pop("limit", 1000)
         offset = filters.pop("offset", 0)
@@ -147,119 +187,149 @@ class JSONLBackend:
         else:
             results.sort(key=lambda x: x.get("ts", ""), reverse=reverse)
 
-        # Paginate
         return results[offset : offset + limit]
 
     def get_time_range(self) -> dict | None:
-        """Get min/max timestamps for this file (used by query engine)."""
+        """Return ``{min_ts, max_ts}`` for this file, or *None* if empty.
+
+        Used by the query engine to skip files whose time range does not
+        overlap the caller's ``since``/``until`` filter
+        (@spec-ref: spec/04-read-interface.md §5.1 — 查询合并方案).
+        """
         if not self.file_path.exists() or self.file_path.stat().st_size == 0:
             return None
-        min_ts = None
-        max_ts = None
+        min_ts = max_ts = None
         with open(self.file_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    entry = json.loads(line)
-                    ts = entry.get("ts")
-                    if ts:
-                        if min_ts is None or ts < min_ts:
-                            min_ts = ts
-                        if max_ts is None or ts > max_ts:
-                            max_ts = ts
+                    ts = json.loads(line).get("ts")
                 except json.JSONDecodeError:
                     continue
+                if ts:
+                    if min_ts is None or ts < min_ts:
+                        min_ts = ts
+                    if max_ts is None or ts > max_ts:
+                        max_ts = ts
         return {"min_ts": min_ts, "max_ts": max_ts} if min_ts else None
 
-    # --- Internal ---
+    # ------------------------------------------------------------------
+    # Internal — Circular Rotation
+    # ------------------------------------------------------------------
 
     def _should_rotate(self) -> bool:
-        return self.file_path.exists() and self.file_path.stat().st_size > self.max_size_bytes
+        return (
+            self.file_path.exists()
+            and self.file_path.stat().st_size > self.max_size_bytes
+        )
 
     def _safe_rotate(self) -> None:
-        """Safe rotation: rename → create new → delete oldest.
+        """Perform a crash-safe file rotation.
 
-        spec 05-storage.md §5.1: 评审修复 AGG-001
+        @spec-ref: spec/05-storage.md §5.1 — 评审修复 AGG-001
+
+        The naive "delete-oldest then create-new" order has a window
+        where data is permanently lost if the process crashes between
+        the two operations.  This method uses a four-step protocol
+        that is safe against that scenario:
+
+        1. **Rename** the current file to ``*.rotating`` (marks it as
+           "being rotated away").
+        2. **Create** a new file and write the global-context header.
+           If this step fails (disk full, permission error), the rename
+           is rolled back and the original file is restored.
+        3. **Delete** the oldest completed files until the count is
+           within *max_files*.  Their ``.tracebacks`` sidecars are
+           deleted as well.
+        4. **Finalise** by renaming the ``*.rotating`` file back to
+           ``*.jsonl`` (without the ``.rotating`` marker).
         """
         rotating_path = self.file_path.with_suffix(".jsonl.rotating")
 
-        # Step 1: Rename current file (mark as rotating)
+        # Step 1: rename → .rotating
         try:
             self.file_path.rename(rotating_path)
         except FileNotFoundError:
-            return  # File already gone
+            return  # Someone else rotated concurrently; nothing to do.
 
         try:
-            # Step 2: Create new file
+            # Step 2: create new file (validates write permission, disk space)
             new_path = self._generate_next_filename()
             new_path.touch()
             self.file_path = new_path
             self._write_global_context()
 
-            # Step 3: Delete oldest completed files
+            # Step 3: prune oldest completed files
             files = sorted(self._get_completed_files())
             while len(files) >= self.max_files:
                 oldest = files[0]
                 oldest.unlink(missing_ok=True)
-                # Clean up corresponding traceback file
                 tb_file = oldest.with_suffix(".tracebacks")
                 if tb_file.exists():
                     tb_file.unlink()
                 files = sorted(self._get_completed_files())
 
-            # Step 4: Remove .rotating suffix (rotation complete)
+            # Step 4: finalise the renamed file
             final_path = rotating_path.with_suffix(".jsonl")
             rotating_path.rename(final_path)
 
         except OSError as e:
-            # Rollback: restore original filename
+            # Rollback: the new file could not be created, so restore
+            # the original to avoid losing in-flight log data.
             if rotating_path.exists():
                 rotating_path.rename(self.file_path)
-            raise RuntimeError(f"Rotation failed, original file restored: {e}") from e
+            raise RuntimeError(
+                f"Rotation failed, original file restored: {e}"
+            ) from e
 
     def _recover_from_interrupted_rotation(self) -> None:
-        """Recover from a rotation that was interrupted mid-way.
+        """Recover ``*.rotating`` files left behind by a previous crash.
 
-        For file `name.jsonl.rotating`, strip `.rotating` → `name.jsonl`.
-        Uses stem (which strips last suffix) instead of with_suffix
-        (which would produce name.jsonl.jsonl).
+        A ``.rotating`` file means the previous process completed step 1
+        (rename) but never reached step 4 (finalise).  We undo the
+        rename by stripping the ``.rotating`` suffix — i.e. the file
+        reverts to its original ``.jsonl`` name.
         """
         parent = self.file_path.parent
         for f in parent.glob("*.rotating"):
-            # f = name.jsonl.rotating → f.stem = name.jsonl
+            # f.stem strips the last suffix (.rotating), yielding the
+            # original filename (e.g. "name.jsonl").
             original = f.parent / f.stem
             if not original.exists():
                 f.rename(original)
             else:
+                # Original already exists (step 4 succeeded but the
+                # .rotating file was not cleaned up) — discard the
+                # stale marker.
                 f.unlink(missing_ok=True)
 
     def _generate_next_filename(self) -> Path:
-        """Generate next filename for rotation."""
+        """Produce a timestamped filename for the next rotation slot.
+
+        Uses microsecond precision to avoid collisions when multiple
+        rotations happen within the same second
+        (@spec-ref: spec/05-storage.md §2.3 — 评审修复 B07).
+        """
         base = self.file_path.stem
-        # Extract the base pattern (without timestamp)
         match = re.match(r"(.+?)_\d{8}_\d+$", base)
-        if match:
-            base_pattern = match.group(1)
-        else:
-            base_pattern = base
+        base_pattern = match.group(1) if match else base
 
         now = datetime.now()
-        time_str = now.strftime("%H%M%S") + f"{now.microsecond:06d}"
         date_str = now.strftime("%Y%m%d")
+        time_str = now.strftime("%H%M%S") + f"{now.microsecond:06d}"
         name = f"{base_pattern}_{date_str}_{time_str}.jsonl"
         return self.file_path.parent / name
 
     def _get_completed_files(self) -> list[Path]:
-        """Get all completed log files (not .rotating)."""
-        # Find files matching the same base pattern
+        """List all finished log files matching this run's base pattern.
+
+        Excludes files that are currently being rotated (``.rotating``).
+        """
         pattern = self.file_path.stem
         match = re.match(r"(.+?)_\d{8}_\d+$", pattern)
-        if match:
-            base_pattern = match.group(1)
-        else:
-            base_pattern = pattern
+        base_pattern = match.group(1) if match else pattern
 
         return sorted(
             f
@@ -268,7 +338,11 @@ class JSONLBackend:
         )
 
     def _write_global_context(self) -> None:
-        """Write global context as first line of the file."""
+        """Write the global-context record as the first line of the file.
+
+        The record uses ``level="__GLOBAL_CTX__"`` so that query filters
+        can skip it when counting data entries.
+        """
         if not self._global_ctx:
             return
         ctx_entry = {
@@ -288,12 +362,22 @@ class JSONLBackend:
         with open(self.file_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
+    # ------------------------------------------------------------------
+    # Internal — Query Helpers
+    # ------------------------------------------------------------------
+
     def _traceback_path(self) -> Path:
         return self.file_path.with_suffix(".tracebacks")
 
     @staticmethod
     def _match(entry: dict, filters: dict) -> bool:
-        """Check if entry matches all filters."""
+        """Return True if *entry* satisfies every filter in *filters*.
+
+        Special filter keys:
+        - ``min_dur`` / ``max_dur`` — range check on ``entry["dur"]``
+        - ``module`` with ``*`` — fnmatch glob (prefix or suffix)
+        - ``keyword`` — case-insensitive substring over the full entry
+        """
         for key, value in filters.items():
             if value is None:
                 continue
