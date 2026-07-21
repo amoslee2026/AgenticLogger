@@ -1,8 +1,21 @@
-"""Auto-fill fields: ts, pid, rid, seq.
+"""Auto-fill fields: ts, pid, rid, seq — and caller module extraction.
 
-spec 03-write-sdk.md §2.3: 自动填充字段
+@spec-ref: spec/03-write-sdk.md §2.3 — 自动填充字段
+@spec-ref: spec/05-storage.md §2.2 — 日志文件命名
+
+Every log entry is augmented with four auto-filled fields so the caller
+never has to supply them manually:
+
+- **ts**:  ISO 8601 timestamp with timezone (millisecond precision)
+- **pid**: OS process ID — distinguishes concurrent writers
+- **rid**: Run ID (UUID4 hex[:8]) — chains all entries from one execution
+- **seq**: Monotonic sequence number — preserves order within a run
+
+Additionally, :func:`auto_module` inspects the call stack to determine
+the caller's ``__name__`` so the ``module`` field is filled automatically.
 """
 
+import inspect
 import os
 import uuid
 from datetime import datetime, timezone
@@ -11,20 +24,17 @@ from datetime import datetime, timezone
 class AutoFields:
     """Generates auto-filled fields for each log entry.
 
-    Automatically provides:
-    - ts: ISO 8601 timestamp with timezone (millisecond precision)
-    - pid: process ID
-    - rid: run ID (UUID4, generated once per AgentLogger instance)
-    - seq: global sequence number (monotonically increasing)
+    One instance per :class:`~agentic_logger.logger.AgentLogger`.
+    The ``rid`` is fixed at construction time; ``seq`` increments on
+    every :meth:`fill` call.
+
+    Args:
+        rid: Optional run ID.  If *None*, a UUID4 hex[:8] is generated.
+             Pass a parent's ``rid`` to propagate across subprocesses
+             (@spec-ref: spec/03-write-sdk.md — 评审修复 U03).
     """
 
     def __init__(self, rid: str | None = None):
-        """Initialize auto-fields.
-
-        Args:
-            rid: Optional run ID. If not provided, generates UUID4.
-                 Allows parent processes to propagate rid to children.
-        """
         self._rid = rid or uuid.uuid4().hex[:8]
         self._pid = str(os.getpid())
         self._seq = 0
@@ -40,9 +50,11 @@ class AutoFields:
         return self._pid
 
     def fill(self, entry: dict) -> dict:
-        """Fill auto-fields into a log entry (in-place + return).
+        """Fill auto-fields into *entry* (in-place) and return it.
 
-        Fields that are already set in the entry are NOT overwritten.
+        Fields already present in *entry* are **not** overwritten, so
+        callers can override any auto-field by setting it before calling
+        :meth:`fill`.
         """
         self._seq += 1
 
@@ -59,20 +71,23 @@ class AutoFields:
 
 
 def auto_module(depth: int = 2) -> str:
-    """Extract module name from call stack.
+    """Extract the caller's module name from the call stack.
 
-    spec 03-write-sdk.md: module 自动提取 (评审修复 AGG-007)
+    @spec-ref: spec/03-write-sdk.md — 评审修复 AGG-007 (module 自动提取)
+
+    Walks *depth* frames up from the current frame and returns the
+    ``__name__`` global of that frame's module.  This lets AgentLogger
+    methods accept ``module=None`` and still produce meaningful output.
 
     Args:
-        depth: How many frames to skip. depth=2 skips this function
-               and the direct caller (info/error/etc), returning the
-               actual business caller's module.
+        depth: Number of stack frames to skip.  ``depth=2`` skips this
+               function itself **and** the direct caller (e.g. ``info``),
+               landing on the actual business code that triggered the log.
 
     Returns:
-        Module name string (e.g., "my_agent.parser"), or "unknown".
+        Dotted module name (e.g. ``"my_agent.parser"``), or ``"unknown"``
+        if the frame walk fails.
     """
-    import inspect
-
     try:
         frame = inspect.currentframe()
         for _ in range(depth):
@@ -81,4 +96,6 @@ def auto_module(depth: int = 2) -> str:
                 return "unknown"
         return frame.f_globals.get("__name__", "unknown")
     finally:
+        # Prevent reference cycles — CPython docs recommend this for
+        # code that touches ``sys._getframe`` / ``currentframe()``.
         del frame
