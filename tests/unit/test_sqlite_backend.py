@@ -120,14 +120,16 @@ class TestSQLiteBackend:
 
     def test_sqlite_backend_circular(self, tmp_path: Path):
         """Test circular write mode with retention."""
+        from datetime import datetime, timezone
         db_path = tmp_path / "test.sqlite"
         # Small retention for testing (1 hour)
         backend = SQLiteBackend(db_path, circular=True, max_size_mb=1, retention_hours=1)
 
-        # Write many entries
+        # Write many entries with current timestamps
+        now = datetime.now(timezone.utc)
         for i in range(100):
             entry = {
-                "ts": "2026-01-01T00:00:00Z",
+                "ts": now.isoformat(),
                 "level": "INFO",
                 "msg": f"Message {i}",
                 "rid": "rid1",
