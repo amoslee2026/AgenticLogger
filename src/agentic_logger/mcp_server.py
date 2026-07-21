@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -298,7 +297,6 @@ def create_server(log_dir: str | Path = "./logs"):
     Returns an ``mcp.Server`` ready to be run via ``server.run()``.
     """
     from mcp.server import Server
-    from mcp.server.stdio import stdio_server
     from mcp.types import Tool, TextContent
 
     log_path = Path(log_dir)
