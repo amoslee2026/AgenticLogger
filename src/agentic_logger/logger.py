@@ -41,6 +41,10 @@ def _sanitize_filename_part(s: str, max_len: int = 50) -> str:
     Non-word characters (anything other than ``\\w`` and ``-``) are
     replaced with underscores; the result is truncated to *max_len*
     bytes.  (@spec-ref: spec/05-storage.md §2.2 — 评审修复 S10)
+
+    @spec-why: Prevents path traversal and filesystem errors from user-supplied program names.
+    @spec-invariant: Does NOT validate the full path — only sanitizes individual components.
+    @last-changed: 2026-07-21
     """
     return re.sub(r"[^\w\-]", "_", s)[:max_len]
 
