@@ -101,27 +101,36 @@ logger.warn("Slow operation", module="database", dur=5000, error_code="PERF_SLOW
 
 ---
 
-#### `logger.error(msg, module, error_code, tid=None, dur=None, ctx=None)`
+#### `logger.error(msg, module=None, error_code=None, tid=None, dur=None, ctx=None)`
+
+> 评审修复 (AGG-002): `error_code` 改为可选，默认 `"UNKNOWN"`。不传时 SDK 发出警告。
+> 评审修复 (AGG-007): `module` 可选。
 
 **参数**:
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `msg` | str | ✅ | 简短描述 |
-| `module` | str | ✅ | 模块名 |
-| `error_code` | str | ✅ | **结构化错误码 (必填)** |
+| `module` | str | ⚠️ | 模块名 (**不传则自动提取**) |
+| `error_code` | str | ⚠️ | **结构化错误码** (建议必填，默认 `"UNKNOWN"`) |
 | `tid` | str | ⚠️ | 堆栈跟踪引用 ID |
 | `dur` | int | ⚠️ | 操作耗时 (ms) |
 | `ctx` | dict | ⚠️ | 上下文 |
 
 **示例**:
 ```python
-logger.error("Failed to parse", module="parser", error_code="PARSE_JSON", tid="trace_001", ctx={"file": "data.json", "line": 42})
+from agentic_logger import ErrorCode
 
-# 自动捕获异常
+# 推荐: 使用 ErrorCode 枚举
+logger.error("Failed to parse", error_code=ErrorCode.PARSE_JSON, tid="trace_001", ctx={"file": "data.json", "line": 42})
+
+# 自动捕获异常 (一步完成，评审修复 U07)
 try:
     risky_operation()
 except Exception as e:
-    logger.error("Operation failed", module="executor", error_code="EXEC_RUNTIME", tid=logger.save_traceback(e))
+    logger.exception("Operation failed", error_code=ErrorCode.EXEC_RUNTIME)
+
+# 简化: error_code 不传 (默认 UNKNOWN，SDK 发 warning)
+logger.error("Something failed")  # ⚠️ warning: error_code not provided
 ```
 
 ---
