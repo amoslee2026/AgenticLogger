@@ -521,34 +521,112 @@ for log in engine.stream(level="ERROR", rid="550e8400"):
 
 ### 5.1 统一查询接口
 
+> 评审修复 (AGG-006): 实现跨后端元数据优先扫描 + 流式归并排序。
+
 ```python
 class LogQueryEngine:
-    """统一查询引擎，自动选择 JSONL 或 SQLite 后端"""
+    """
+    统一查询引擎。
+    
+    查询策略:
+    1. 扫描所有后端，收集每个后端的时间范围元数据
+    2. 过滤掉与查询时间范围不重叠的后端
+    3. 对剩余后端按时间范围排序，使用 heapq.merge 流式归并
+    4. 应用 limit/offset 分页
+    """
     
     def __init__(self, log_dir="./logs"):
         self.log_dir = Path(log_dir)
     
     def query(self, **filters):
-        """多条件查询"""
+        """多条件查询 (跨后端归并)"""
+        import heapq
+        from itertools import islice
+        
+        limit = filters.pop('limit', 100)
+        offset = filters.pop('offset', 0)
+        order_by = filters.pop('order_by', 'ts_desc')
+        
+        # Step 1: 发现所有后端并收集元数据
         backends = self._detect_backends()
-        results = []
         
-        for backend in backends:
-            results.extend(backend.query(**filters))
+        # Step 2: 过滤时间范围不重叠的后端
+        since = filters.get('since')
+        until = filters.get('until')
+        candidates = [
+            b for b in backends
+            if self._time_range_overlaps(b.get_time_range(), since, until)
+        ]
         
-        # 排序 + 分页
-        results = self._sort_and_paginate(results, **filters)
-        return results
+        if not candidates:
+            return {"count": 0, "total": 0, "logs": [], "query_info": self._query_info(0, [])}
+        
+        # Step 3: 流式归并排序
+        if order_by in ('ts_asc', 'ts_desc'):
+            # 使用 heapq.merge 归并已排序的流
+            iterators = [b.stream_query(**filters) for b in candidates]
+            
+            if order_by == 'ts_asc':
+                merged = heapq.merge(*iterators, key=lambda x: x.get('ts', ''))
+            else:
+                # ts_desc: 反向归并 (各后端内部已按 ts DESC 排序)
+                merged = heapq.merge(*iterators, key=lambda x: x.get('ts', ''), reverse=True)
+        elif order_by == 'dur_desc':
+            # dur_desc: 收集后排序 (无法流式)
+            all_results = []
+            for b in candidates:
+                all_results.extend(b.query(**filters))
+            all_results.sort(key=lambda x: x.get('dur') or 0, reverse=True)
+            total = len(all_results)
+            paginated = list(islice(all_results, offset, offset + limit))
+            return {
+                "count": len(paginated),
+                "total": total,
+                "logs": paginated,
+                "query_info": self._query_info(0, candidates)
+            }
+        else:
+            merged = heapq.merge(*iterators, key=lambda x: x.get('ts', ''), reverse=True)
+        
+        # Step 4: 应用 offset + limit
+        paginated = list(islice(merged, offset, offset + limit))
+        
+        return {
+            "count": len(paginated),
+            "total": None,  # 流式模式无法提前知道总数
+            "logs": paginated,
+            "query_info": self._query_info(0, candidates)
+        }
     
     def _detect_backends(self):
         """扫描日志目录，检测所有后端"""
         backends = []
-        for f in self.log_dir.iterdir():
-            if f.suffix == ".jsonl":
+        for f in sorted(self.log_dir.iterdir()):
+            if f.suffix == '.jsonl' and not f.name.endswith('.rotating'):
                 backends.append(JSONLBackend(file_path=f))
-            elif f.suffix == ".sqlite":
+            elif f.suffix == '.sqlite':
                 backends.append(SQLiteBackend(file_path=f))
         return backends
+    
+    def _time_range_overlaps(self, time_range, since, until):
+        """检查后端时间范围是否与查询范围重叠"""
+        if not since and not until:
+            return True
+        if time_range is None:
+            return True  # 未知范围时保守扫描
+        
+        b_min, b_max = time_range.get('min_ts'), time_range.get('max_ts')
+        if since and b_max and b_max < since:
+            return False
+        if until and b_min and b_min > until:
+            return False
+        return True
+    
+    def _query_info(self, scan_time_ms, backends):
+        return {
+            "backend_count": len(backends),
+            "backends": [{"file": str(b.file_path.name), "type": b.__class__.__name__} for b in backends]
+        }
 ```
 
 ### 5.2 JSONL 查询 (流式解析)
