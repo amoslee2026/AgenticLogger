@@ -56,22 +56,32 @@ logger = AgentLogger(
 
 ---
 
-#### `logger.info(msg, module, dur=None, error_code=None, ctx=None)`
+#### `logger.info(msg, module=None, dur=None, error_code=None, ctx=None)`
+
+> 评审修复 (AGG-007): `module` 改为可选，默认从调用栈自动提取。
 
 **参数**:
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `msg` | str | ✅ | 简短描述 (一句话) |
-| `module` | str | ✅ | 模块/class/函数名 |
+| `module` | str | ⚠️ | 模块/class/函数名 (**不传则自动提取**) |
 | `tid` | str | ⚠️ | 堆栈跟踪引用 ID (可为 null) |
 | `dur` | int | ⚠️ | 操作耗时 (ms) |
-| `error_code` | str | ⚠️ | 结构化错误码 |
+| `error_code` | str | ⚠️ | 结构化错误码 (建议使用 ErrorCode 枚举，见 02-log-format.md §9) |
 | `ctx` | dict | ⚠️ | 少量关键上下文键值对 |
 
 **示例**:
 ```python
-logger.info("Processing started", module="parser", ctx={"file": "data.json", "size": 1024})
-logger.info("Request completed", module="api.handler", dur=234, ctx={"endpoint": "/users"})
+# module 自动提取 (推荐 — Agent 生成代码最简形式)
+logger.info("Processing started", ctx={"file": "data.json", "size": 1024})
+logger.info("Request completed", dur=234, ctx={"endpoint": "/users"})
+
+# 显式指定 module
+logger.info("Processing started", module="parser", ctx={"file": "data.json"})
+
+# 使用 ErrorCode 枚举
+from agentic_logger import ErrorCode
+logger.error("Parse failed", error_code=ErrorCode.PARSE_JSON, ctx={"file": "data.json"})
 ```
 
 **输出**:
