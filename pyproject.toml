@@ -1,0 +1,29 @@
+[project]
+name = "agentic-logger"
+version = "0.1.0"
+description = "Structured logging for Coding Agents - write once, read efficiently"
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["agentic_logger"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
