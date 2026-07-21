@@ -4,140 +4,149 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        写入层 (多语言 SDK)                       │
-│  ┌─────────┐  ┌──────────┐  ┌─────┐  ┌────┐  ┌─────┐  ┌─────┐ │
-│  │ Python  │  │ Node.js  │  │Bash │  │ Go │  │Rust │  │ ...  │ │
-│  │  SDK    │  │  SDK     │  │ SDK │  │SDK │  │SDK  │  │      │ │
-│  └────┬────┘  └────┬─────┘  └──┬──┘  └─┬──┘  └──┬──┘  └──┬──┘ │
-│       └────────────┴────────────┴───────┴────────┴────────┘     │
-│                              ↓                                   │
-│                    统一 JSONL 写入协议                            │
+│              写入层 (Python SDK 为 MVP)                         │
+│  ┌─────────┐  ┌──────────┐  ┌─────┐                           │
+│  │ Python  │  │ Node.js  │  │Bash │  ...后续扩展              │
+│  │  SDK    │  │  SDK     │  │ SDK │                           │
+│  └────┬────┘  └────┬─────┘  └──┬──┘                           │
+│       └────────────┴────────────┘                               │
+│              ↓ 统一写入协议 (新字段: rid/tid/pid/dur/ErrorCode) │
 └──────────────────────────────┬───────────────────────────────────┘
                                ↓
                 ┌──────────────────────────┐
-                │      存储层 (后端)        │
+                │      存储层 (双后端)      │
+                │                          │
                 │  ┌──────────────────┐    │
-                │  │ JSONL (默认)     │    │
+                │  │ JSONL            │    │
+                │  │ (小文件场景)     │    │
                 │  │ - 流式追加       │    │
                 │  │ - 可 grep/jq     │    │
-                │  │ - 可压缩归档     │    │
                 │  └──────────────────┘    │
                 │  ┌──────────────────┐    │
-                │  │ SQLite (可选)    │    │
+                │  │ SQLite + WAL     │    │
+                │  │ (大文件/多进程)  │    │
                 │  │ - 索引查询       │    │
-                │  │ - 单文件部署     │    │
-                │  └──────────────────┘    │
-                │  ┌──────────────────┐    │
-                │  │ PostgreSQL (未来)│    │
-                │  │ - 大规模         │    │
-                │  │ - 多用户         │    │
+                │  │ - 并发读写       │    │
                 │  └──────────────────┘    │
                 └────────────┬─────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                        读取层 (多接口)                           │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
-│  │ MCP Tool │  │   CLI    │  │ REST API  │  │  Python SDK  │  │
-│  │(AI Agent)│  │ (人类)   │  │(系统集成) │  │  (程序调用)  │  │
-│  └──────────┘  └──────────┘  └───────────┘  └──────────────┘  │
+│                    读取层 (Agent 优先)                           │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │ MCP Tool         │  │ CLI              │  │ Python SDK   │  │
+│  │ (Agent高效访问)  │  │ (人类辅助调试)   │  │ (程序调用)   │  │
+│  │ 优先保证         │  │ 可读性放低       │  │              │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### 设计原则变更
+
+| 原则 | 说明 |
+|------|------|
+| **Agent 优先** | 优先保证 Agent 高效访问，人类可读性优先级放低 |
+| **结构化优先** | 日志写入时即为结构化，所有字段面向程序解析 |
+| **信息丰富** | 包含 rid/tid/pid/dur/ErrorCode 等丰富字段，便于 Agent 精确检索 |
+| **MVP 优先** | Python SDK 作为 MVP，验证核心设计后再扩展多语言 |
 
 ---
 
 ## 2. 核心组件
 
-### 2.1 写入 SDK (Write SDK)
+### 2.1 写入 SDK
 
-**职责**: 提供多语言的结构化日志写入接口
+**MVP**: Python SDK，后续扩展到 Node.js / Bash / Go / Rust
 
-**组件清单**:
+**核心方法** (所有方法均需支持新字段 rid/tid/pid/dur/ErrorCode/ctx)：
 
-| 组件                  | 语言    | 包名                  | 优先级 |
-| --------------------- | ------- | --------------------- | ------ |
-| `agentic-logger-py` | Python  | `agentic-logger`    | P0     |
-| `agentic-logger-js` | Node.js | `@agentic/logger`   | P0     |
-| `agentic-logger-sh` | Bash    | `agentic_logger.sh` | P1     |
-| `agentic-logger-go` | Go      | `agenticlogger`     | P2     |
-| `agentic-logger-rs` | Rust    | `agentic-logger`    | P2     |
-
-**统一 API 语义**:
-
-所有 SDK 提供相同的语义接口，确保日志格式一致。
-
-核心方法:
-
-- `info(message, **context)` - 一般信息
-- `warn(message, **context)` - 警告
-- `error(message, error=None, **context)` - 错误
-- `tool_call(tool, command, exit_code, duration_ms, ...)` - 工具调用
-- `file_op(operation, path, success, size_bytes, ...)` - 文件操作
-- `decision(choice, alternatives, reason, ...)` - 决策点
+| 方法 | 说明 |
+|------|------|
+| `info(msg, module, rid, ...)` | 一般信息 |
+| `warn(msg, module, rid, ...)` | 警告 |
+| `error(msg, module, rid, error_code, ...)` | 错误 |
+| `tool_call(tool, cmd, exit, dur, rid, ...)` | 工具调用 |
+| `file_op(op, path, ok, rid, ...)` | 文件操作 |
+| `decision(choice, alts, reason, rid, ...)` | 决策点 |
+| `code_gen(lang, path, rid, ...)` | 代码生成 |
+| `context_switch(from_task, to_task, rid, ...)` | 上下文切换 |
 
 ---
 
-### 2.2 存储后端 (Storage Backend)
+### 2.2 存储后端
 
-**职责**: 持久化结构化日志
+**双后端策略**：
 
-**后端选择**:
+| 后端 | 适用场景 | 优先级 |
+|------|---------|--------|
+| **JSONL** | 日志文件较小 (< 阈值) | P0 |
+| **SQLite + WAL** | 日志文件较大 / 多进程并发读写 | P0 |
 
-| 后端                 | 用途 | 优点                | 缺点         | 优先级 |
-| -------------------- | ---- | ------------------- | ------------ | ------ |
-| **JSONL**      | 默认 | 流式、简单、可 grep | 查询慢       | P0     |
-| **SQLite**     | 可选 | 索引快、单文件      | 写入并发受限 | P1     |
-| **PostgreSQL** | 未来 | 大规模、多用户      | 部署复杂     | P2     |
+**不再考虑 PostgreSQL**。
 
-**默认配置**:
-
-- 日志文件路径: `./logs/agentic-{date}.jsonl`
-- 自动轮转: 每天 00:00 轮转
-- 保留策略: 默认 30 天
+**存储后端自动选择逻辑**:
+```python
+if file_size < THRESHOLD and not multi_process:
+    use JSONLBackend()
+else:
+    use SQLiteBackend(wal_mode=True)
+```
 
 ---
 
-### 2.3 读取接口 (Read Interface)
+### 2.3 日志文件命名
 
-**职责**: 提供多方式的日志查询和分析
+**每次运行生成独立文件**，文件名包含程序/命令标识和运行日期：
 
-#### 2.3.1 MCP Tool
+**格式**: `{program_name}_{command_or_pid}_{YYYY-MM-DD}_{HHmmss}.jsonl`
 
-**目标用户**: AI Agent (Claude, Cursor 等)
+**示例**:
+```
+logs/
+├── my_agent_main_2026-07-21_103000.jsonl
+├── my_agent_worker_2026-07-21_103005.jsonl
+├── build_script_npm_install_2026-07-21_110000.jsonl
+└── coder_agent_pid12345_2026-07-21_113000.jsonl
+```
 
-**MCP Tools**:
+**字段说明**:
+- `program_name`: 程序名 (如 `my_agent`, `build_script`)
+- `command_or_pid`: 子命令名或进程ID
+- `YYYY-MM-DD`: 运行日期
+- `HHmmss`: 启动时间 (时/分/秒)
 
-| Tool                    | 功能     | 参数                                      |
-| ----------------------- | -------- | ----------------------------------------- |
-| `agentic_log_query`   | 查询日志 | `level`, `tool`, `since`, `limit` |
-| `agentic_log_analyze` | 分析模式 | `time_range`, `focus`                 |
-| `agentic_log_stats`   | 统计分析 | `since`, `group_by`                   |
-| `agentic_log_stream`  | 实时流   | `level`, `tool`                       |
+---
 
-#### 2.3.2 CLI
+### 2.4 循环写入模式
 
-**目标用户**: 人类开发者
+**对于较大的日志文件**，采用循环写入 (circular/ring buffer)：
 
-**命令**:
+```
+文件达到大小上限 → 从头部覆盖旧数据 → 始终保持最近 N 条日志
+```
 
-| 命令       | 功能     | 示例                                            |
-| ---------- | -------- | ----------------------------------------------- |
-| `tail`   | 实时查看 | `agentic-logger tail --level ERROR --follow`  |
-| `query`  | 查询过滤 | `agentic-logger query --tool bash --since 1h` |
-| `stats`  | 统计分析 | `agentic-logger stats --group-by tool`        |
-| `export` | 导出日志 | `agentic-logger export --format json`         |
+**配置**:
+```python
+configure(
+    storage="sqlite",
+    max_size_mb=500,      # 文件最大 500MB
+    circular=True,        # 启用循环写入
+    retention_count=100000  # 保留最近 10 万条
+)
+```
 
-#### 2.3.3 REST API
+---
 
-**目标用户**: 其他系统集成
+### 2.5 读取接口
 
-**Endpoints**:
+**Agent 优先**，人类可读性放低。
 
-| Endpoint            | Method    | 功能     |
-| ------------------- | --------- | -------- |
-| `/api/v1/logs`    | GET       | 查询日志 |
-| `/api/v1/stats`   | GET       | 统计分析 |
-| `/api/v1/analyze` | POST      | 深度分析 |
-| `/api/v1/stream`  | WebSocket | 实时流   |
+| 接口 | 目标用户 | 优先级 | 说明 |
+|------|---------|--------|------|
+| **MCP Tool** | AI Agent | P0 | 丰富的查询参数，结构化返回 |
+| **CLI** | 人类 | P1 | 辅助调试，可读性次要 |
+| **Python SDK** | 程序 | P0 | 直接 API 调用 |
+
+**不再提供 REST API**。
 
 ---
 
@@ -150,117 +159,74 @@ Coding Agent 生成代码
     ↓
 导入 SDK (from agentic_logger import agent_log)
     ↓
+初始化 (设置 program_name, rid, 存储后端)
+    ↓
 调用 API (agent_log.tool_call(...))
     ↓
 SDK 内部处理
-    ├─→ 添加 timestamp
-    ├─→ 添加模块信息
-    └─→ 序列化为 JSON
+    ├─→ 自动填充 ts, pid/seq, module
+    ├─→ 序列化 (含 rid/tid/dur/ErrorCode)
+    └─→ 选择存储后端 (JSONL or SQLite+WAL)
     ↓
-写入 JSONL 文件 (追加模式)
+写入 {program}_{cmd}_{date}_{time}.jsonl
 ```
 
-### 3.2 读取流程 (CLI)
-
-```
-用户执行命令 (agentic-logger query --tool bash)
-    ↓
-CLI 解析参数
-    ↓
-读取 JSONL 文件 (流式)
-    ↓
-逐行解析 + 过滤
-    ↓
-格式化输出 (表格/JSON)
-```
-
-### 3.3 读取流程 (MCP)
+### 3.2 读取流程 (MCP)
 
 ```
 AI Agent 调用 MCP Tool
     ↓
-MCP Server 接收请求
+MCP Server 接收请求 (丰富参数: rid/level/module/error_code/tool/...)
     ↓
-读取 JSONL/SQLite
+根据文件大小选择读取路径
+    ├─→ JSONL: 流式解析 + 过滤
+    └─→ SQLite: SQL 查询 (WAL 模式)
     ↓
-查询/分析
-    ↓
-返回结构化结果
+返回结构化结果 (Agent 可直接解析)
 ```
 
 ---
 
 ## 4. 技术栈
 
-### 4.1 写入 SDK
+### 4.1 MVP (Python)
 
-| 语言    | 技术栈                 | 依赖                         |
-| ------- | ---------------------- | ---------------------------- |
-| Python  | 纯 Python (无外部依赖) | `orjson` (可选，加速 JSON) |
-| Node.js | TypeScript + ESM       | 无外部依赖                   |
-| Bash    | Bash 4.0+              | `jq` (可选)                |
+| 组件 | 技术栈 |
+|------|--------|
+| SDK | 纯 Python (无外部依赖) |
+| JSONL 存储 | 纯文件 IO |
+| SQLite 存储 | `sqlite3` (stdlib) + WAL |
+| MCP | `mcp` SDK |
+| CLI | `click` |
 
-### 4.2 存储后端
+### 4.2 后续扩展
 
-| 后端   | 技术栈                      |
-| ------ | --------------------------- |
-| JSONL  | 纯文件 IO                   |
-| SQLite | `sqlite3` (Python stdlib) |
-
-### 4.3 读取接口
-
-| 接口 | 技术栈              |
-| ---- | ------------------- |
-| MCP  | Python +`mcp` SDK |
-| CLI  | Python +`click`   |
-| REST | Python +`fastapi` |
+| 组件 | 技术栈 |
+|------|--------|
+| Node.js SDK | TypeScript + ESM |
+| Bash SDK | Bash 4.0+ |
 
 ---
 
-## 5. 部署架构
+## 5. 性能目标
 
-### 5.1 单机部署 (默认)
-
-```
-单进程
-├─ SDK 写入 → JSONL 文件
-└─ CLI/MCP 读取 → JSONL 文件
-```
-
-### 5.2 分布式部署 (未来)
-
-```
-多进程/多机
-├─ SDK 写入 → 消息队列 (Kafka/Redis)
-├─ Worker → 消费队列 → JSONL/PostgreSQL
-└─ CLI/MCP/REST → 查询数据库
-```
+| 指标 | 目标 |
+|------|------|
+| 写入延迟 | < 1ms (JSONL), < 5ms (SQLite WAL) |
+| 读取延迟 (MCP) | < 500ms (10000 行) |
+| 多进程并发写入 | SQLite WAL 模式支持 |
+| 循环写入 | 文件大小可控，旧数据自动覆盖 |
 
 ---
 
-## 6. 性能目标
+## 6. 与旧版差异
 
-| 指标                 | 目标                    |
-| -------------------- | ----------------------- |
-| 写入延迟             | < 1ms (追加到文件)      |
-| 读取延迟 (CLI query) | < 1s (1000 行)          |
-| 读取延迟 (MCP query) | < 2s (10000 行)         |
-| 并发写入             | 1000 QPS (单机)         |
-| 日志大小             | 单文件 < 1GB (自动轮转) |
-
----
-
-## 7. 扩展性
-
-### 7.1 未来扩展方向
-
-- **更多 SDK**: Go, Rust, Java
-- **更多后端**: Elasticsearch, ClickHouse
-- **更多接口**: gRPC, GraphQL
-- **高级功能**: 实时告警、可视化仪表板
-
-### 7.2 插件机制
-
-- **写入插件**: 自定义日志处理器
-- **读取插件**: 自定义分析器
-- **存储插件**: 自定义存储后端
+| 方面 | 旧版 | 新版 |
+|------|------|------|
+| 首要目标 | 人类可读 | Agent 高效访问 |
+| 存储后端 | JSONL → SQLite → PostgreSQL | JSONL + SQLite (WAL), 无 PostgreSQL |
+| 读取接口 | MCP + CLI + REST API + SDK | MCP + CLI + SDK, 无 REST API |
+| SDK 优先级 | Python + Node.js + Bash 并行 | Python MVP 优先 |
+| 日志字段 | 基础字段 | 丰富字段 (rid/tid/pid/dur/ErrorCode/ctx) |
+| 文件命名 | `agentic-{date}.jsonl` | `{program}_{cmd}_{date}_{time}.jsonl` |
+| 大文件策略 | 按日轮转 | 循环写入 |
