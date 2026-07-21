@@ -316,6 +316,11 @@ class AgentLogger:
         """Log a tool / command invocation.
 
         @spec-ref: spec/03-write-sdk.md — tool_call
+        @agent-tag: tool-execution
+        @agent-caution: Raises ValueError if exit != 0 and error_code is None — enforces error taxonomy for failures.
+        @spec-why: Explicit error_code requirement for failures prevents silent error aggregation under UNKNOWN.
+        @spec-invariant: Does NOT capture stdout/stderr automatically — caller must provide summaries (truncated to 64KB).
+        @last-changed: 2026-07-21
 
         Args:
             tool: Tool name (``"bash"``, ``"read"``, ``"write"``, …).
