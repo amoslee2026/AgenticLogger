@@ -8,11 +8,15 @@ readme = "README.md"
 dependencies = []
 
 [project.optional-dependencies]
+mcp = ["mcp>=1.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
+
+[project.scripts]
+agentic-logger-mcp = "agentic_logger.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
