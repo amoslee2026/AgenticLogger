@@ -53,6 +53,10 @@ def _select_backend(log_dir: Path, program: str, command: str | None) -> str:
     """Heuristic backend selection for ``storage="auto"``.
 
     @spec-ref: spec/05-storage.md §2.3 — 评审修复 AGG-003
+    @agent-tag: backend-selection
+    @spec-why: Balances performance (JSONL) vs. multi-process safety (SQLite) without requiring manual config.
+    @spec-invariant: Does NOT detect concurrent writers at runtime — assumes single-writer unless command keywords suggest batch processing.
+    @last-changed: 2026-07-21
 
     Rules (evaluated in order; first match wins):
 
