@@ -91,12 +91,12 @@ logger.error("Parse failed", error_code=ErrorCode.PARSE_JSON, ctx={"file": "data
 
 ---
 
-#### `logger.warn(msg, module, dur=None, error_code=None, ctx=None)`
+#### `logger.warn(msg, module=None, dur=None, error_code=None, ctx=None)`
 
-参数同 `info`。
+参数同 `info`。`module` 可选自动提取，`error_code` 可选。
 
 ```python
-logger.warn("Slow operation", module="database", dur=5000, error_code="PERF_SLOW", ctx={"threshold": 1000})
+logger.warn("Slow operation", dur=5000, error_code="PERF_SLOW", ctx={"threshold": 1000})
 ```
 
 ---
