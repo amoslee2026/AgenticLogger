@@ -175,6 +175,8 @@ class TestSQLiteBackend:
                 "level": "INFO",
                 "msg": f"Message {i}",
                 "rid": "rid1",
+                "pid": "12345",
+                "seq": i,
             }
             backend.write(entry)
 
