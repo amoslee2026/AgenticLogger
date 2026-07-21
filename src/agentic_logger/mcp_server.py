@@ -132,7 +132,8 @@ def handle_query(
     if tool is not None:
         filters["tool"] = tool
     if exit_code is not None:
-        filters["exit_code"] = exit_code
+        # MCP API uses "exit_code", JSONL entry uses "exit"
+        filters["exit"] = exit_code
     if op is not None:
         filters["op"] = op
     if path is not None:
