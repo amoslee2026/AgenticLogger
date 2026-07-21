@@ -176,6 +176,8 @@ logger.tool_call(
 
 #### `logger.file_op(op, path, ok, size=None, error_code=None, tid=None, dur=None, ctx=None)`
 
+> 评审修复 (AGG-016): `ok=False` 时 `error_code` 强制必填。
+
 **参数**:
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
