@@ -2,6 +2,8 @@
 
 @spec-ref: spec/04-read-interface.md §2 — MCP Tool
 @spec-ref: spec/01-architecture.md §2.3 — 读取接口
+@last-changed: 2026-07-21
+@log-module: agentic_logger.mcp_server
 
 Provides these MCP Tools to AI Agents (Claude Code, Cursor, etc.):
 
