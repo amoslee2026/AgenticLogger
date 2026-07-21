@@ -342,7 +342,152 @@
 
 ---
 
-## 9. 兼容性
+## 9. 标准错误码字典 (ErrorCode)
+
+> 评审修复 (AGG-002): 定义标准错误码分类体系，确保跨 Agent 一致性。
+
+### 9.1 错误码命名规范
+
+**格式**: `{CATEGORY}_{SPECIFIC}` (全大写 + 下划线)
+
+**分类前缀**:
+
+| 前缀 | 类别 | 说明 |
+|------|------|------|
+| `PARSE_*` | 解析错误 | JSON/YAML/XML/CSV 等格式解析失败 |
+| `IO_*` | 文件系统 | 读写删除权限等文件操作错误 |
+| `EXEC_*` | 执行错误 | 命令执行失败、超时、非零退出码 |
+| `NETWORK_*` | 网络错误 | 连接超时、DNS 失败、SSL 错误 |
+| `AUTH_*` | 认证授权 | 登录失败、token 过期、权限不足 |
+| `CONFIG_*` | 配置错误 | 缺失配置、格式错误、值不合法 |
+| `RESOURCE_*` | 资源不足 | 内存不足、磁盘满、CPU 超限 |
+| `VALIDATION_*` | 输入校验 | 参数非法、类型错误、范围越界 |
+| `TIMEOUT_*` | 超时 | 各类超时场景 |
+| `CONFLICT_*` | 冲突 | 并发冲突、版本冲突、锁竞争 |
+| `INTERNAL_*` | 内部错误 | 程序 bug、未预期的异常 |
+| `UNKNOWN` | 未知 | 无法分类的错误 (兜底) |
+
+### 9.2 完整错误码列表
+
+#### PARSE_* (解析错误)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `PARSE_JSON` | JSON 解析失败 | `json.loads()` 抛出异常 |
+| `PARSE_YAML` | YAML 解析失败 | `yaml.safe_load()` 格式错误 |
+| `PARSE_XML` | XML 解析失败 | XML 格式不合法 |
+| `PARSE_CSV` | CSV 解析失败 | 列数不匹配 |
+| `PARSE_REGEX` | 正则匹配失败 | 模式不匹配或语法错误 |
+| `PARSE_ENCODING` | 编码错误 | UTF-8 解码失败 |
+
+#### IO_* (文件系统)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `IO_NOT_FOUND` | 文件/目录不存在 | `FileNotFoundError` |
+| `IO_PERMISSION` | 权限不足 | `PermissionError` |
+| `IO_DISK_FULL` | 磁盘空间不足 | `NoSpaceLeftOnDevice` |
+| `IO_READ_FAIL` | 读取失败 | 通用读取错误 |
+| `IO_WRITE_FAIL` | 写入失败 | 通用写入错误 |
+| `IO_LOCK_FAIL` | 文件锁获取失败 | 并发写入冲突 |
+
+#### EXEC_* (执行错误)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `EXEC_NON_ZERO` | 命令非零退出 | `exit_code != 0` |
+| `EXEC_TIMEOUT` | 命令执行超时 | 超过设定时间限制 |
+| `EXEC_NOT_FOUND` | 命令不存在 | `command not found` |
+| `EXEC_KILLED` | 进程被杀死 | OOM killer 或信号 |
+| `EXEC_CRASH` | 进程崩溃 | segfault 或 panic |
+
+#### NETWORK_* (网络错误)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `NET_TIMEOUT` | 网络超时 | 连接/读取超时 |
+| `NET_DNS_FAIL` | DNS 解析失败 | 域名无法解析 |
+| `NET_CONN_REFUSED` | 连接被拒绝 | 端口未监听 |
+| `NET_SSL_ERROR` | SSL/TLS 错误 | 证书无效 |
+| `NET_HTTP_ERROR` | HTTP 错误 | 4xx/5xx 状态码 |
+
+#### AUTH_* (认证授权)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `AUTH_LOGIN_FAIL` | 登录失败 | 用户名/密码错误 |
+| `AUTH_TOKEN_EXPIRED` | Token 过期 | JWT 过期 |
+| `AUTH_FORBIDDEN` | 权限不足 | 403 Forbidden |
+| `AUTH_UNAUTHORIZED` | 未认证 | 401 Unauthorized |
+
+#### CONFIG_* (配置错误)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `CONFIG_MISSING` | 配置缺失 | 必填项未设置 |
+| `CONFIG_INVALID` | 配置格式错误 | 类型不匹配 |
+| `CONFIG_RANGE` | 配置值越界 | 超出允许范围 |
+
+#### RESOURCE_* (资源不足)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `RES_MEMORY` | 内存不足 | OOM |
+| `RES_DISK` | 磁盘不足 | 存储空间耗尽 |
+| `RES_CPU` | CPU 超限 | 超出配额 |
+| `RES_FD` | 文件描述符耗尽 | `Too many open files` |
+
+#### TIMEOUT_* (超时)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `TIMEOUT_API` | API 调用超时 | 远程服务无响应 |
+| `TIMEOUT_DB` | 数据库查询超时 | 慢查询 |
+| `TIMEOUT_LOCK` | 锁等待超时 | 数据库行锁/表锁 |
+
+#### CONFLICT_* (冲突)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `CONFLICT_VERSION` | 版本冲突 | Git merge conflict |
+| `CONFLICT_LOCK` | 锁竞争 | 多线程/多进程争抢 |
+| `CONFLICT_DUPLICATE` | 重复冲突 | 唯一约束违反 |
+
+#### INTERNAL_* (内部错误)
+
+| 错误码 | 说明 | 示例场景 |
+|--------|------|---------|
+| `INTERNAL_UNEXPECTED` | 未预期异常 | 通用兜底 |
+| `INTERNAL_ASSERT` | 断言失败 | `assert` 触发 |
+| `INTERNAL_TYPE` | 类型错误 | `TypeError` |
+| `INTERNAL_KEY` | 键不存在 | `KeyError` |
+| `INTERNAL_INDEX` | 索引越界 | `IndexError` |
+
+#### UNKNOWN
+
+| 错误码 | 说明 |
+|--------|------|
+| `UNKNOWN` | 无法分类的错误 (兜底默认值) |
+
+### 9.3 SDK 使用示例
+
+```python
+from agentic_logger import AgentLogger, ErrorCode
+
+logger = AgentLogger(program="my_agent")
+
+# 使用枚举常量
+logger.error("Failed to parse config", module="config", error_code=ErrorCode.PARSE_JSON)
+logger.tool_call(tool="bash", cmd="npm build", exit=1, dur=5000, error_code=ErrorCode.EXEC_NON_ZERO)
+logger.file_op("read", "/missing.txt", ok=False, error_code=ErrorCode.IO_NOT_FOUND)
+
+# 允许自定义扩展 (保持 PREFIX_SPECIFIC 格式)
+logger.error("Custom error", module="custom", error_code="CUSTOM_BUSINESS_RULE")
+```
+
+---
+
+## 10. 兼容性
 
 ### 9.1 向后兼容
 
