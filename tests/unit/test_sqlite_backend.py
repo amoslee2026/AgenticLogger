@@ -74,9 +74,9 @@ class TestSQLiteBackend:
         backend = SQLiteBackend(db_path)
 
         entries = [
-            {"ts": "2026-01-01T00:00:00Z", "level": "ERROR", "msg": "E1", "rid": "r1", "error_code": "IO_NOT_FOUND"},
-            {"ts": "2026-01-01T00:00:01Z", "level": "ERROR", "msg": "E2", "rid": "r1", "error_code": "EXEC_NON_ZERO"},
-            {"ts": "2026-01-01T00:00:02Z", "level": "ERROR", "msg": "E3", "rid": "r1", "error_code": "IO_NOT_FOUND"},
+            {"ts": "2026-01-01T00:00:00Z", "level": "ERROR", "msg": "E1", "rid": "r1", "pid": "12345", "seq": 1, "error_code": "IO_NOT_FOUND"},
+            {"ts": "2026-01-01T00:00:01Z", "level": "ERROR", "msg": "E2", "rid": "r1", "pid": "12345", "seq": 2, "error_code": "EXEC_NON_ZERO"},
+            {"ts": "2026-01-01T00:00:02Z", "level": "ERROR", "msg": "E3", "rid": "r1", "pid": "12345", "seq": 3, "error_code": "IO_NOT_FOUND"},
         ]
         for entry in entries:
             backend.write(entry)
