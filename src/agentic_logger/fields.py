@@ -61,6 +61,10 @@ class AutoFields:
         Fields already present in *entry* are **not** overwritten, so
         callers can override any auto-field by setting it before calling
         :meth:`fill`.
+
+        @spec-why: In-place mutation avoids creating a new dict per entry (saves allocations).
+        @spec-invariant: Does NOT validate field types — assumes caller provides correct types.
+        @last-changed: 2026-07-21
         """
         self._seq += 1
 
