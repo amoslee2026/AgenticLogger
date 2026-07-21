@@ -55,27 +55,32 @@ def _merge_query(
 
     @spec-ref: spec/04-read-interface.md §5.1 — 跨后端归并排序
     """
+    # Extract pagination from filters (with safe defaults)
+    limit = filters.pop("limit", 100)
+    offset = filters.pop("offset", 0)
+    order_by = filters.pop("order_by", "ts_desc")
+
     candidates = []
     for b in backends:
         tr = b.get_time_range()
-        if tr and since and tr["max_ts"] and tr["max_ts"] < since:
+        if tr and since and tr.get("max_ts") and tr["max_ts"] < since:
             continue
-        if tr and until and tr["min_ts"] and tr["min_ts"] > until:
+        if tr and until and tr.get("min_ts") and tr["min_ts"] > until:
             continue
         candidates.append(b)
 
-    # Merge results from all matching backends
+    # Fetch all matching entries from each candidate (generous limit per backend)
     all_results = []
     for b in candidates:
-        all_results.extend(b.query(since=since, until=until, limit=10000, **filters))
+        all_results.extend(b.query(since=since, until=until, limit=100000, **filters))
 
-    # Sort by ts descending
-    order_by = filters.pop("order_by", "ts_desc")
+    # Sort
     reverse = order_by != "ts_asc"
-    all_results.sort(key=lambda x: x.get("ts", ""), reverse=reverse)
+    if order_by == "dur_desc":
+        all_results.sort(key=lambda x: x.get("dur") or 0, reverse=True)
+    else:
+        all_results.sort(key=lambda x: x.get("ts", ""), reverse=reverse)
 
-    limit = filters.get("limit", 100)
-    offset = filters.get("offset", 0)
     return all_results[offset : offset + limit]
 
 
