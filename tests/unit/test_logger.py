@@ -18,7 +18,7 @@ def log_dir(tmp_path):
 
 @pytest.fixture
 def logger(log_dir):
-    return AgentLogger(program="test_agent", command="test", log_dir=log_dir)
+    return AgentLogger(program="test_agent", command="test", log_dir=log_dir, storage="jsonl")
 
 
 def _read_logs(file_path: Path) -> list[dict]:
