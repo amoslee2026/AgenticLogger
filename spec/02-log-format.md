@@ -494,7 +494,7 @@ logger.error("Custom error", module="custom", error_code="CUSTOM_BUSINESS_RULE")
 - 新增字段不影响旧版本解析
 - 删除字段需标记为 `deprecated` 并保留至少 1 个版本
 
-### 9.2 外部日志支持
+### 10.2 外部日志支持
 
 对于非 AgenticLogger 格式的外部日志 (CI 日志、应用日志等):
 
