@@ -241,6 +241,11 @@ class JSONLBackend:
         """Perform a crash-safe file rotation.
 
         @spec-ref: spec/05-storage.md §5.1 — 评审修复 AGG-001
+        @agent-tag: file-rotation
+        @agent-caution: Four-step protocol (rename → create → delete → finalize) — interruption at any step leaves recoverable state.
+        @spec-why: Prevents data loss if process crashes mid-rotation — naive delete-then-create has a permanent-loss window.
+        @spec-invariant: Does NOT lock the file during rotation — assumes single-writer per file (JSONL invariant).
+        @last-changed: 2026-07-21
 
         The naive "delete-oldest then create-new" order has a window
         where data is permanently lost if the process crashes between
