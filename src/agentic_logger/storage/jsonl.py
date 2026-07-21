@@ -32,6 +32,11 @@ class JSONLBackend:
     """JSONL storage backend with optional circular rotation.
 
     @spec-ref: spec/05-storage.md §3 — JSONL 后端
+    @agent-tag: storage-backend
+    @agent-caution: Circular rotation renames files mid-stream — tail -f processes may see brief gaps.
+    @spec-why: One file per run (with optional rotation) balances query performance vs. file-count overhead.
+    @spec-invariant: Does NOT support concurrent writers to the same file — use SQLite backend for multi-process scenarios.
+    @last-changed: 2026-07-21
 
     Args:
         file_path: Path to the ``.jsonl`` log file.  Parent directories
