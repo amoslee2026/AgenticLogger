@@ -351,7 +351,9 @@ class TestQuery:
         logger.info("test")
         rid = logger.rid
         results = logger._backend.query(rid=rid)
-        assert len(results) == 1
+        # GLOBAL_CTX + INFO both have rid
+        entries = [e for e in results if e["level"] != "__GLOBAL_CTX__"]
+        assert len(entries) == 1
 
     def test_query_by_dur_range(self, logger):
         logger.info("fast", dur=50)
