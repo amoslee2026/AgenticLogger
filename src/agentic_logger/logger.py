@@ -2,6 +2,8 @@
 
 @spec-ref: spec/03-write-sdk.md — 写入 SDK API 设计
 @spec-ref: spec/01-architecture.md — 系统架构概览
+@last-changed: 2026-07-21
+@log-module: agentic_logger.logger
 
 Usage::
 
