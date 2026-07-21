@@ -1,6 +1,8 @@
 """CLI for AgenticLogger — query, trace, stats, tail, traceback, list-files.
 
 @spec-ref: spec/04-read-interface.md §3 — CLI
+@last-changed: 2026-07-21
+@log-module: agentic_logger.cli
 
 Usage::
 
