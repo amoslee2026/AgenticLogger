@@ -369,6 +369,11 @@ class JSONLBackend:
     def _traceback_path(self) -> Path:
         return self.file_path.with_suffix(".tracebacks")
 
+    # Fields that are level-specific: an entry must HAVE the field
+    # for the filter to match.  (e.g. only TOOL entries have "tool",
+    # only FILE_OP entries have "op".)
+    _LEVEL_SPECIFIC_KEYS = {"tool", "op", "choice", "exit", "lang"}
+
     @staticmethod
     def _match(entry: dict, filters: dict) -> bool:
         """Return True if *entry* satisfies every filter in *filters*.
@@ -377,6 +382,8 @@ class JSONLBackend:
         - ``min_dur`` / ``max_dur`` — range check on ``entry["dur"]``
         - ``module`` with ``*`` — fnmatch glob (prefix or suffix)
         - ``keyword`` — case-insensitive substring over the full entry
+        - Level-specific keys (``tool``, ``op``, etc.) — entry must
+          contain the key *and* it must match.
         """
         for key, value in filters.items():
             if value is None:
@@ -394,6 +401,10 @@ class JSONLBackend:
             elif key == "keyword":
                 text = json.dumps(entry, ensure_ascii=False).lower()
                 if str(value).lower() not in text:
+                    return False
+            elif key in JSONLBackend._LEVEL_SPECIFIC_KEYS:
+                # Level-specific: must be present AND match
+                if key not in entry or str(entry[key]) != str(value):
                     return False
             elif key in entry and str(entry[key]) != str(value):
                 return False
