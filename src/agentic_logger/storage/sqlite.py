@@ -98,6 +98,11 @@ class SQLiteBackend:
     """SQLite storage backend with WAL journal mode.
 
     @spec-ref: spec/05-storage.md §4
+    @agent-tag: storage-backend
+    @agent-caution: Single-file database — all writers must serialize through threading.Lock.
+    @spec-why: WAL mode + threading.Lock balances concurrent-read performance with write serialization.
+    @spec-invariant: Does NOT support cross-process locking — use one SQLite file per process or implement external locking.
+    @last-changed: 2026-07-21
 
     Thread-safe: all writes are serialized via a ``threading.Lock``.
     WAL mode allows concurrent reads while writes are in progress.
