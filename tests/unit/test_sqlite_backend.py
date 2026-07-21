@@ -51,6 +51,8 @@ class TestSQLiteBackend:
             "level": "TOOL",
             "msg": "bash ls",
             "rid": "rid1",
+            "pid": "12345",
+            "seq": 1,
             "tool": "bash",
             "cmd": "ls",
             "exit": 0,
