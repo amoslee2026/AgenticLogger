@@ -220,12 +220,14 @@ class TestCircularRotation:
 
     def test_no_rotation_when_disabled(self, tmp_path):
         fp = tmp_path / "test.jsonl"
-        fp.write_text("x" * 2000)
+        # Write valid JSON (not garbage) so query can parse
+        fp.write_text('{"ts":"...","level":"INFO","msg":"existing"}\n')
         b = JSONLBackend(file_path=fp, max_size_mb=0, circular=False)
         b.write(_entry(msg="test"))
         # Should still write to same file without rotation
         results = b.query()
-        assert any(e.get("msg") == "test" for e in results)
+        msgs = [e.get("msg") for e in results]
+        assert "test" in msgs
 
     def test_max_files_enforced(self, tmp_path):
         # Create 3 existing files
