@@ -20,7 +20,6 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 from agentic_logger.mcp_server import (
     handle_query,
