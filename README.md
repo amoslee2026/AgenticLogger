@@ -235,6 +235,41 @@ uv run pytest tests/ --cov=agentic_logger
 uv run ruff check src/
 ```
 
+## Log Analysis Utilities
+
+The `utils/` directory provides scripts for efficient log analysis (per Token Saving Rules):
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `utils/log_triage.py` | Error-type summary (count + first occurrence) | `./utils/log_triage.py <logfile>` |
+| `utils/log_extract.sh` | Extract ±10-line context around patterns | `./utils/log_extract.sh <logfile> [pattern]` |
+| `utils/agentic_logger.py` | Shared logging utility for Python scripts | `from utils.agentic_logger import get_logger` |
+| `utils/CLAUDE.md` | Index describing each script | Read before writing new scripts |
+
+**Workflow**: Run `log_triage.py` first to identify error types, then `log_extract.sh` to pull context around specific patterns. This avoids reading the full log file.
+
+## Code Conventions
+
+### Inline Spec Annotations
+
+Source files use inline spec tags for drift detection and grep-based discovery:
+
+| Tag | Purpose |
+|-----|---------|
+| `@spec-ref` | Points to arch spec section (file#section) |
+| `@spec-why` | Reasoning behind non-obvious decisions |
+| `@spec-invariant` | What the function deliberately does NOT do |
+| `@spec-caution` | Cross-file/cross-repo dependencies |
+| `@agent-tag` | Functional category for grep discovery (sparse, critical paths only) |
+| `@agent-caution` | Risk warnings for future edits |
+| `@agent-todo` | Agent-facing action reminders |
+| `@last-changed` | Single timestamp of most recent substantive change (ISO 8601) |
+| `@log-module` | Retrieval metadata linking to log entries |
+
+**Density principle**: Every tag/comment line must be terse — no filler words, no restating the obvious. If content exceeds ~2 lines, question whether it belongs inline or in the arch spec.
+
+**Drift detection**: Before editing code with `@spec-*` tags, read them as constraints. After editing, verify the new behavior still satisfies `@spec-invariant` and matches the section cited in `@spec-ref`. If not, follow the conflict resolution process (present to user, don't silently rewrite specs).
+
 ## Design Specifications
 
 Full design documents in `spec/`:
