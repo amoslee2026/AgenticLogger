@@ -42,7 +42,8 @@ class TestInit:
         assert log_dir.exists()
         assert logger.file_path.parent == log_dir
 
-    def test_filename_format(self, logger):
+    def test_filename_format(self, log_dir):
+        logger = AgentLogger(program="test_agent", command="test", log_dir=log_dir, storage="jsonl")
         name = logger.file_path.name
         assert name.startswith("test_agent_test_")
         assert name.endswith(".jsonl")
