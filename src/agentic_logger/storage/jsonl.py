@@ -106,6 +106,11 @@ class JSONLBackend:
         """Persist a stack trace to the ``.tracebacks`` sidecar file.
 
         @spec-ref: spec/05-storage.md §6 — 堆栈跟踪分离存储
+        @agent-tag: traceback-storage
+        @agent-caution: Uses fcntl.flock for multi-process safety — may block on concurrent writes.
+        @spec-why: Separating tracebacks from main log keeps JSONL files lightweight and parseable.
+        @spec-invariant: Does NOT compress traceback text — newlines are escaped to preserve one-record-per-line invariant.
+        @last-changed: 2026-07-21
 
         Newlines inside *traceback_text* are escaped to ``\\n`` so that
         each traceback record stays on exactly one line (preserving the
