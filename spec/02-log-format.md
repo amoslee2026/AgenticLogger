@@ -489,7 +489,7 @@ logger.error("Custom error", module="custom", error_code="CUSTOM_BUSINESS_RULE")
 
 ## 10. 兼容性
 
-### 9.1 向后兼容
+### 10.1 向后兼容
 
 - 新增字段不影响旧版本解析
 - 删除字段需标记为 `deprecated` 并保留至少 1 个版本
