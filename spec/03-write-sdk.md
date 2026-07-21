@@ -261,6 +261,58 @@ except Exception as e:
 
 ---
 
+#### `logger.exception(msg, module=None, error_code="INTERNAL_UNEXPECTED", ctx=None)`
+
+> 评审修复 (AGG-007/U07): 一步完成异常记录，无需手动管理 tid。
+
+**用法**: 在 except 块中调用，自动捕获当前异常并保存 traceback。
+
+```python
+try:
+    risky_operation()
+except Exception:
+    # 一步完成: 自动保存 traceback + 记录 error
+    logger.exception("Operation failed", error_code=ErrorCode.EXEC_RUNTIME)
+    # 等价于:
+    # tid = logger.save_traceback(sys.exc_info()[1])
+    # logger.error("Operation failed", module=<auto>, error_code=..., tid=tid)
+```
+
+---
+
+### module 自动提取实现
+
+> 评审修复 (AGG-007): 所有方法 `module` 参数可选，默认从调用栈自动提取。
+
+```python
+import inspect
+
+class AgentLogger:
+    def _auto_module(self, depth=2):
+        """
+        从调用栈自动提取模块名。
+        
+        depth=2: 跳过 _auto_module 自身和直接调用者 (info/error 等)，
+                 返回实际业务调用者的模块名。
+        """
+        try:
+            frame = inspect.currentframe()
+            for _ in range(depth):
+                frame = frame.f_back
+                if frame is None:
+                    return "unknown"
+            return frame.f_globals.get('__name__', 'unknown')
+        finally:
+            del frame  # 防止引用循环
+    
+    def info(self, msg, module=None, dur=None, error_code=None, ctx=None):
+        if module is None:
+            module = self._auto_module()
+        # ... 写入逻辑
+```
+
+---
+
 #### `logger.set_global_context(**kwargs)`
 
 设置全局上下文（写入日志文件头部，每条日志自动携带）。
