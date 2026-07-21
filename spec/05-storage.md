@@ -249,7 +249,10 @@ class SQLiteBackend:
         self.conn.commit()  # WAL 模式下 commit 很快
     
     def _extract_columns(self, entry: dict) -> dict:
-        """提取所有字段到列"""
+        """提取所有字段到列
+        
+        评审修复 (AGG-005): 补全所有 level 类型的字段映射。
+        """
         cols = {
             'ts': entry.get('ts'),
             'level': entry.get('level'),
@@ -263,7 +266,7 @@ class SQLiteBackend:
             'ctx': json.dumps(entry.get('ctx', {}), ensure_ascii=False),
         }
         
-        # 类型特定字段
+        # TOOL: 工具调用
         if entry.get('level') == 'TOOL':
             cols.update({
                 'tool': entry.get('tool'),
@@ -272,6 +275,7 @@ class SQLiteBackend:
                 'stdout': entry.get('stdout'),
                 'stderr': entry.get('stderr'),
             })
+        # FILE_OP: 文件操作
         elif entry.get('level') == 'FILE_OP':
             cols.update({
                 'op': entry.get('op'),
@@ -279,7 +283,30 @@ class SQLiteBackend:
                 'ok': 1 if entry.get('ok') else 0,
                 'size': entry.get('size'),
             })
-        # ... 其他类型
+        # DECISION: 决策点
+        elif entry.get('level') == 'DECISION':
+            cols.update({
+                'choice': entry.get('choice'),
+                'alts': json.dumps(entry.get('alts', []), ensure_ascii=False),
+                'reason': entry.get('reason'),
+                'confidence': entry.get('confidence'),
+            })
+        # CODE_GEN: 代码生成
+        elif entry.get('level') == 'CODE_GEN':
+            cols.update({
+                'lang': entry.get('lang'),
+                'path': entry.get('path'),
+                'lines': entry.get('lines'),
+                'funcs': json.dumps(entry.get('funcs', []), ensure_ascii=False),
+                'imports': json.dumps(entry.get('imports', []), ensure_ascii=False),
+            })
+        # CONTEXT: 上下文切换
+        elif entry.get('level') == 'CONTEXT':
+            cols.update({
+                'from_task': entry.get('from_task'),
+                'to_task': entry.get('to_task'),
+                'reason': entry.get('reason'),
+            })
         
         return cols
 ```
