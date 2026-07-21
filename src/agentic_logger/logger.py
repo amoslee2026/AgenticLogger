@@ -238,6 +238,11 @@ class AgentLogger:
         """Log an error.
 
         @spec-ref: spec/03-write-sdk.md — 评审修复 AGG-002
+        @agent-tag: error-handling
+        @agent-caution: Emits UserWarning if error_code is None — forces callers to acknowledge missing error taxonomy.
+        @spec-why: Warning (not exception) preserves backward compatibility while encouraging proper error_code usage.
+        @spec-invariant: Does NOT raise exceptions for missing error_code — logs the error regardless, with UNKNOWN fallback.
+        @last-changed: 2026-07-21
 
         If *error_code* is not provided, a ``UserWarning`` is emitted
         and the code defaults to :attr:`ErrorCode.UNKNOWN`.  Supplying
