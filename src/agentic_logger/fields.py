@@ -84,6 +84,11 @@ def auto_module(depth: int = 2) -> str:
     """Extract the caller's module name from the call stack.
 
     @spec-ref: spec/03-write-sdk.md — 评审修复 AGG-007 (module 自动提取)
+    @agent-tag: caller-introspection
+    @agent-caution: Uses inspect.currentframe() — not guaranteed in all Python implementations (e.g., Jython).
+    @spec-why: Stack introspection eliminates manual module parameter passing at every call site.
+    @spec-invariant: Does NOT cache module names — re-inspects stack on every call (depth=2 skips info()/warn() wrappers).
+    @last-changed: 2026-07-21
 
     Walks *depth* frames up from the current frame and returns the
     ``__name__`` global of that frame's module.  This lets AgentLogger
