@@ -196,9 +196,9 @@ class TestSQLiteBackend:
         backend = SQLiteBackend(db_path)
 
         entries = [
-            {"ts": "2026-01-01T00:00:00Z", "level": "INFO", "msg": "First", "rid": "r1", "dur": 100},
-            {"ts": "2026-01-01T00:00:02Z", "level": "INFO", "msg": "Third", "rid": "r1", "dur": 300},
-            {"ts": "2026-01-01T00:00:01Z", "level": "INFO", "msg": "Second", "rid": "r1", "dur": 200},
+            {"ts": "2026-01-01T00:00:00Z", "level": "INFO", "msg": "First", "rid": "r1", "pid": "12345", "seq": 1, "dur": 100},
+            {"ts": "2026-01-01T00:00:02Z", "level": "INFO", "msg": "Third", "rid": "r1", "pid": "12345", "seq": 2, "dur": 300},
+            {"ts": "2026-01-01T00:00:01Z", "level": "INFO", "msg": "Second", "rid": "r1", "pid": "12345", "seq": 3, "dur": 200},
         ]
         for entry in entries:
             backend.write(entry)
