@@ -421,39 +421,56 @@ class CircularJSONLBackend(JSONLBackend):
 
 ### 5.2 SQLite 循环写入
 
-**策略**: 记录数达到上限后，删除最旧的记录。
+> 评审修复 (AGG-001): 基于时间窗口的清理策略，配合定期 WAL checkpoint。
+
+**策略**: 记录超过保留时间后删除，定期执行 WAL checkpoint 控制文件大小。
 
 ```python
 class CircularSQLiteBackend(SQLiteBackend):
-    def __init__(self, file_path, retention_count=100000, max_size_mb=None):
+    def __init__(self, file_path, retention_hours=24, max_size_mb=500, checkpoint_every=1000):
         super().__init__(file_path, wal_mode=True)
-        self.retention_count = retention_count
-        self.max_size_bytes = (max_size_mb or 500) * 1024 * 1024
+        self.retention_seconds = retention_hours * 3600
+        self.max_size_bytes = max_size_mb * 1024 * 1024
+        self._write_count = 0
+        self._checkpoint_every = checkpoint_every
     
     def write(self, entry):
         super().write(entry)
+        self._write_count += 1
         
-        # 检查是否需要清理
-        count = self._count()
-        if count > self.retention_count:
-            self._delete_oldest(count - self.retention_count)
+        # 每 N 次写入执行 passive checkpoint (不阻塞读写)
+        if self._write_count % self._checkpoint_every == 0:
+            self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         
-        # 检查文件大小
-        size = self.file_path.stat().st_size
-        if size > self.max_size_bytes:
-            self._vacuum_and_cleanup()
+        # 每 100 次检查一次清理条件 (避免每次写入都扫描)
+        if self._write_count % 100 == 0:
+            self._cleanup_if_needed()
     
-    def _delete_oldest(self, count):
-        """删除最旧的 N 条记录"""
+    def _cleanup_if_needed(self):
+        """按需清理"""
+        # 条件 1: 超过保留时间的记录
         self.conn.execute(
-            "DELETE FROM logs WHERE id IN (SELECT id FROM logs ORDER BY ts ASC LIMIT ?)",
-            (count,)
+            "DELETE FROM logs WHERE ts < datetime('now', ?)",
+            (f"-{self.retention_seconds} seconds",)
         )
+        
+        # 条件 2: 文件大小超限 → 删除最旧 10% 的记录
+        if self.file_path.stat().st_size > self.max_size_bytes:
+            count = self.conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
+            delete_count = max(count // 10, 1)
+            self.conn.execute(
+                "DELETE FROM logs WHERE id IN (SELECT id FROM logs ORDER BY ts ASC LIMIT ?)",
+                (delete_count,)
+            )
+            # TRUNCATE checkpoint 释放 WAL 空间
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        
+        # 同步清理孤儿 traceback
+        self.conn.execute(
+            "DELETE FROM tracebacks WHERE tid NOT IN (SELECT DISTINCT tid FROM logs WHERE tid IS NOT NULL)"
+        )
+        
         self.conn.commit()
-    
-    def _vacuum_and_cleanup(self):
-        """压缩数据库"""
-        self.conn.execute("VACUUM")
 ```
 
 ---
