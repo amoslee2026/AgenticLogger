@@ -1,50 +1,65 @@
 # 04 - 读取接口设计
 
-## 1. 概述
+## 1. 设计原则
 
-AgenticLogger 提供四种读取接口：
-
-| 接口 | 目标用户 | 使用场景 |
-|------|---------|---------|
-| **MCP Tool** | AI Agent (Claude/Cursor) | Agent 查询分析日志 |
-| **CLI** | 人类开发者 | 终端查看、调试 |
-| **REST API** | 系统集成 | HTTP 接口调用 |
-| **Python SDK** | 程序调用 | 代码中查询分析 |
+| 原则 | 说明 |
+|------|------|
+| **Agent 优先** | MCP Tool 和 Python SDK 优先，人类可读性放低 |
+| **丰富查询参数** | 支持按所有字段精确检索 (rid/level/module/error_code/tool/...) |
+| **无 REST API** | 不提供 HTTP REST 接口 |
+| **结构化返回** | 所有接口返回结构化数据，便于 Agent 解析 |
 
 ---
 
-## 2. MCP Tool
+## 2. MCP Tool (Agent 优先)
 
 ### 2.1 概述
 
-MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
+MCP (Model Context Protocol) 是 Agent 访问日志的主要接口。
 
 ### 2.2 MCP Tools 定义
 
-#### `agentic_log_query` - 查询日志
+---
 
-**描述**: 按条件查询结构化日志
+#### `agentic_log_query` - 精确查询
+
+**描述**: 按多条件组合查询日志，支持所有字段
 
 **参数**:
 
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `level` | string | ⚠️ | 日志级别: `INFO`, `WARN`, `ERROR`, `TOOL`, `FILE_OP`, `DECISION`, `CODE_GEN`, `CONTEXT` |
-| `tool` | string | ⚠️ | 工具名称 (如 `bash`, `read`) |
-| `exit_code` | integer | ⚠️ | 退出码 (配合 `tool` 使用) |
-| `since` | string | ⚠️ | 起始时间 (ISO 8601 或相对时间 `1h`, `24h`) |
+| `rid` | string | ⚠️ | 运行 ID，串联一次完整流程 |
+| `level` | string | ⚠️ | 日志级别 |
+| `module` | string | ⚠️ | 模块名 (支持前缀匹配 `agent.*`) |
+| `error_code` | string | ⚠️ | 错误码 |
+| `tool` | string | ⚠️ | 工具名称 |
+| `exit_code` | integer | ⚠️ | 退出码 |
+| `op` | string | ⚠️ | 文件操作类型 |
+| `path` | string | ⚠️ | 文件路径 (支持通配符) |
+| `choice` | string | ⚠️ | 决策选择 |
+| `keyword` | string | ⚠️ | 全文搜索 (msg + ctx) |
+| `since` | string | ⚠️ | 起始时间 (ISO 8601 或 `1h`, `24h`) |
 | `until` | string | ⚠️ | 截止时间 |
+| `min_dur` | integer | ⚠️ | 最小耗时 (ms) |
+| `max_dur` | integer | ⚠️ | 最大耗时 (ms) |
+| `pid` | string | ⚠️ | 进程 ID |
+| `tid` | string | ⚠️ | 堆栈跟踪 ID |
 | `limit` | integer | ⚠️ | 返回条数 (默认 100) |
-| `keyword` | string | ⚠️ | 关键词搜索 |
+| `offset` | integer | ⚠️ | 分页偏移 |
+| `order_by` | string | ⚠️ | 排序: `ts_asc`, `ts_desc`, `dur_desc` (默认 `ts_desc`) |
+| `file_pattern` | string | ⚠️ | 日志文件名匹配 (如 `*main*2026-07-21*`) |
 
 **示例调用**:
 ```json
 {
   "tool": "agentic_log_query",
   "arguments": {
+    "rid": "550e8400",
     "level": "ERROR",
-    "since": "2026-07-21T00:00:00Z",
-    "limit": 50
+    "min_dur": 1000,
+    "order_by": "dur_desc",
+    "limit": 20
   }
 }
 ```
@@ -52,26 +67,97 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 **返回**:
 ```json
 {
-  "count": 50,
+  "count": 15,
+  "total": 15,
   "logs": [
-    {"ts": "2026-07-21T11:30:05.678+08:00", "level": "ERROR", "msg": "Build failed", "error": "Exit code 1"},
-    ...
-  ]
+    {
+      "ts": "2026-07-21T11:30:05.678+08:00",
+      "level": "ERROR",
+      "msg": "Build failed",
+      "module": "agent.bash",
+      "rid": "550e8400",
+      "pid": "12345",
+      "error_code": "BUILD_FAIL",
+      "dur": 5000,
+      "ctx": {"cmd": "npm run build"}
+    }
+  ],
+  "query_info": {
+    "backend": "sqlite",
+    "scan_time_ms": 12,
+    "files_scanned": 3
+  }
 }
 ```
 
 ---
 
-#### `agentic_log_analyze` - 分析日志
+#### `agentic_log_trace` - 链路追踪
 
-**描述**: 深度分析日志模式和趋势
+**描述**: 按 rid 查询一次完整运行的所有日志，自动按时间排序
 
 **参数**:
 
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
+| `rid` | string | ✅ | 运行 ID |
+| `level` | string | ⚠️ | 过滤级别 |
+| `module` | string | ⚠️ | 过滤模块 |
+| `include_traceback` | boolean | ⚠️ | 是否包含完整堆栈 (默认 false) |
+
+**示例调用**:
+```json
+{
+  "tool": "agentic_log_trace",
+  "arguments": {
+    "rid": "550e8400",
+    "include_traceback": true
+  }
+}
+```
+
+**返回**:
+```json
+{
+  "rid": "550e8400",
+  "program": "my_agent",
+  "command": "main",
+  "start_time": "2026-07-21T10:30:00.000+08:00",
+  "end_time": "2026-07-21T10:35:00.000+08:00",
+  "total_duration_ms": 300000,
+  "entry_count": 42,
+  "trace": [
+    {"ts": "...", "level": "INFO", "msg": "Agent started", "module": "__lifecycle__", ...},
+    {"ts": "...", "level": "TOOL", "msg": "...", "module": "agent.bash", ...},
+    ...
+  ],
+  "summary": {
+    "info_count": 30,
+    "warn_count": 5,
+    "error_count": 7,
+    "tool_calls": 10,
+    "file_ops": 15,
+    "decisions": 2
+  }
+}
+```
+
+---
+
+#### `agentic_log_analyze` - 深度分析
+
+**描述**: 分析日志模式和趋势
+
+**参数**:
+
+| 参数 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `rid` | string | ⚠️ | 运行 ID (限定分析范围) |
 | `time_range` | string | ⚠️ | 时间范围 (如 `1h`, `24h`, `7d`) |
-| `focus` | string | ⚠️ | 分析焦点: `errors`, `tool_calls`, `decisions`, `performance` |
+| `focus` | string | ⚠️ | 分析焦点: `errors`, `tool_calls`, `decisions`, `performance`, `all` |
+| `error_code` | string | ⚠️ | 按错误码过滤 |
+| `module` | string | ⚠️ | 按模块过滤 |
+| `min_dur` | integer | ⚠️ | 最小耗时 (ms) |
 | `top_n` | integer | ⚠️ | 返回 Top N 结果 (默认 10) |
 
 **示例调用**:
@@ -90,11 +176,22 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 ```json
 {
   "summary": "过去24小时共发现15个错误，主要集中在bash工具调用",
-  "top_errors": [
-    {"error": "Exit code 1", "count": 8, "last_seen": "2026-07-21T11:30:05Z"},
-    {"error": "FileNotFoundError", "count": 5, "last_seen": "2026-07-21T10:15:00Z"}
+  "error_code_distribution": [
+    {"error_code": "BUILD_FAIL", "count": 8, "last_seen": "...", "avg_dur_ms": 5000},
+    {"error_code": "FILE_NOT_FOUND", "count": 5, "last_seen": "...", "avg_dur_ms": 10}
   ],
-  "pattern": "bash命令失败率较高，建议检查依赖安装"
+  "module_distribution": [
+    {"module": "agent.bash", "error_count": 10},
+    {"module": "agent.file", "error_count": 5}
+  ],
+  "performance_hotspots": [
+    {"module": "agent.bash", "avg_dur_ms": 3000, "p99_dur_ms": 15000},
+    {"module": "agent.coder", "avg_dur_ms": 1500, "p99_dur_ms": 8000}
+  ],
+  "recommendations": [
+    "bash 命令失败率较高 (40%)，建议检查依赖安装",
+    "coder 模块 P99 延迟 8s，建议优化代码生成逻辑"
+  ]
 }
 ```
 
@@ -108,8 +205,11 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
+| `rid` | string | ⚠️ | 运行 ID |
 | `since` | string | ⚠️ | 起始时间 |
-| `group_by` | string | ⚠️ | 分组方式: `level`, `tool`, `hour`, `module` |
+| `until` | string | ⚠️ | 截止时间 |
+| `group_by` | string | ⚠️ | 分组: `level`, `tool`, `module`, `error_code`, `hour`, `pid` |
+| `file_pattern` | string | ⚠️ | 文件名匹配 |
 
 **示例调用**:
 ```json
@@ -117,7 +217,7 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
   "tool": "agentic_log_stats",
   "arguments": {
     "since": "24h",
-    "group_by": "level"
+    "group_by": "error_code"
   }
 }
 ```
@@ -125,13 +225,16 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 **返回**:
 ```json
 {
-  "total": 1234,
+  "total_entries": 1234,
+  "time_range": {"since": "2026-07-20T11:00:00Z", "until": "2026-07-21T11:00:00Z"},
   "groups": [
-    {"key": "INFO", "count": 800, "percentage": 64.8},
-    {"key": "TOOL", "count": 250, "percentage": 20.3},
-    {"key": "ERROR", "count": 100, "percentage": 8.1},
-    {"key": "FILE_OP", "count": 84, "percentage": 6.8}
-  ]
+    {"key": "BUILD_FAIL", "count": 8, "percentage": 40.0},
+    {"key": "FILE_NOT_FOUND", "count": 5, "percentage": 25.0},
+    {"key": "PARSE_JSON", "count": 4, "percentage": 20.0},
+    {"key": "EXEC_RUNTIME", "count": 3, "percentage": 15.0}
+  ],
+  "files_scanned": 5,
+  "scan_time_ms": 23
 }
 ```
 
@@ -146,10 +249,33 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `level` | string | ⚠️ | 过滤级别 |
-| `tool` | string | ⚠️ | 过滤工具 |
+| `module` | string | ⚠️ | 过滤模块 |
+| `error_code` | string | ⚠️ | 过滤错误码 |
+| `rid` | string | ⚠️ | 过滤运行 ID |
+| `file_pattern` | string | ⚠️ | 文件名匹配 |
 | `duration` | string | ⚠️ | 持续时间 (如 `5m`, `1h`) |
 
-**返回**: 流式返回新日志
+---
+
+#### `agentic_log_traceback` - 获取堆栈跟踪
+
+**描述**: 按 tid 获取完整堆栈跟踪
+
+**参数**:
+
+| 参数 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `tid` | string | ✅ | 堆栈跟踪引用 ID |
+
+**返回**:
+```json
+{
+  "tid": "trace_001",
+  "traceback": "Traceback (most recent call last):\n  File \"main.py\", line 42, ...\nValueError: ...",
+  "exception_type": "ValueError",
+  "exception_msg": "..."
+}
+```
 
 ---
 
@@ -157,32 +283,34 @@ MCP (Model Context Protocol) 让 AI Agent 直接查询和分析日志。
 
 ```python
 from mcp.server import Server
-from agentic_logger import LogReader
+from agentic_logger import LogQueryEngine
 
 server = Server("agentic-logger")
 
 @server.tool("agentic_log_query")
-def query_logs(level=None, tool=None, since=None, limit=100):
-    reader = LogReader()
-    logs = reader.query(level=level, tool=tool, since=since, limit=limit)
-    return {"count": len(logs), "logs": logs}
-
-@server.tool("agentic_log_analyze")
-def analyze_logs(time_range="24h", focus="errors", top_n=10):
-    reader = LogReader()
-    analysis = reader.analyze(time_range=time_range, focus=focus, top_n=top_n)
-    return analysis
-
-@server.tool("agentic_log_stats")
-def get_stats(since="24h", group_by="level"):
-    reader = LogReader()
-    stats = reader.stats(since=since, group_by=group_by)
-    return stats
+def query_logs(
+    rid=None, level=None, module=None, error_code=None,
+    tool=None, exit_code=None, op=None, path=None,
+    choice=None, keyword=None, since=None, until=None,
+    min_dur=None, max_dur=None, pid=None, tid=None,
+    limit=100, offset=0, order_by="ts_desc",
+    file_pattern=None
+):
+    engine = LogQueryEngine()
+    results = engine.query(
+        rid=rid, level=level, module=module, error_code=error_code,
+        tool=tool, exit_code=exit_code, op=op, path=path,
+        choice=choice, keyword=keyword, since=since, until=until,
+        min_dur=min_dur, max_dur=max_dur, pid=pid, tid=tid,
+        limit=limit, offset=offset, order_by=order_by,
+        file_pattern=file_pattern
+    )
+    return results
 ```
 
 ---
 
-## 3. CLI
+## 3. CLI (人类辅助调试)
 
 ### 3.1 安装
 
@@ -192,340 +320,295 @@ pip install agentic-logger[cli]
 
 ### 3.2 命令概览
 
+| 命令 | 功能 | 人类可读性 |
+|------|------|-----------|
+| `query` | 多条件查询 | 中 (支持表格/JSON) |
+| `trace` | 链路追踪 | 中 |
+| `stats` | 统计分析 | 中 |
+| `tail` | 实时查看 | 低 (原始 JSONL) |
+| `traceback` | 获取堆栈 | 低 |
+| `list-files` | 列出日志文件 | 高 |
+
+### 3.3 `query` 命令
+
+**支持所有查询参数**：
+
 ```bash
-agentic-logger <command> [options]
-```
+# 按运行 ID 查询
+agentic-logger query --rid 550e8400
 
-| 命令 | 功能 |
-|------|------|
-| `tail` | 实时查看日志 |
-| `query` | 查询过滤日志 |
-| `stats` | 统计分析 |
-| `export` | 导出日志 |
-| `config` | 配置管理 |
+# 按错误码查询
+agentic-logger query --error-code BUILD_FAIL
 
----
+# 按模块查询 (支持前缀)
+agentic-logger query --module "agent.*"
 
-### 3.3 `tail` - 实时查看
+# 按耗时范围查询
+agentic-logger query --min-dur 1000 --max-dur 10000
 
-**用法**:
-```bash
-agentic-logger tail [options]
-```
+# 按工具查询
+agentic-logger query --tool bash --exit-code 1
 
-**选项**:
+# 按文件路径查询 (支持通配符)
+agentic-logger query --path "*.py"
 
-| 选项 | 说明 | 默认 |
-|------|------|------|
-| `-f, --follow` | 持续跟踪新日志 | false |
-| `-n, --lines N` | 显示最后 N 行 | 20 |
-| `-l, --level LEVEL` | 过滤级别 | all |
-| `-t, --tool TOOL` | 过滤工具 | all |
-| `--format FORMAT` | 输出格式: `json`, `table`, `pretty` | `pretty` |
-| `--color` | 彩色输出 | true |
+# 按决策查询
+agentic-logger query --level DECISION --choice "use_async"
 
-**示例**:
-```bash
-# 实时查看所有日志
-agentic-logger tail -f
+# 组合查询
+agentic-logger query --rid 550e8400 --level ERROR --min-dur 1000 --order-by dur_desc --limit 20
 
-# 只看错误
-agentic-logger tail -f -l ERROR
-
-# 只看工具调用
-agentic-logger tail -f -t bash
+# 按文件名模式查询
+agentic-logger query --file-pattern "*main*2026-07-21*"
 
 # JSON 输出 (便于 jq 处理)
-agentic-logger tail -f --format json | jq .
-
-# 最后 100 行
-agentic-logger tail -n 100
+agentic-logger query --error-code BUILD_FAIL --format json | jq .
 ```
 
-**输出示例 (pretty)**:
-```
-2026-07-21 11:30:05 [ERROR] agent.bash: Build failed
-  error: Exit code 1
-  cmd: npm run build
-  stderr: Error: Module not found
-
-2026-07-21 11:30:06 [TOOL] agent.bash: Tool executed successfully
-  tool: bash
-  cmd: ls -la
-  exit: 0
-  duration: 50ms
-```
-
----
-
-### 3.4 `query` - 查询过滤
-
-**用法**:
-```bash
-agentic-logger query [options]
-```
-
-**选项**:
+**完整选项**：
 
 | 选项 | 说明 |
 |------|------|
-| `-l, --level LEVEL` | 过滤级别 |
-| `-t, --tool TOOL` | 过滤工具 |
-| `-e, --exit-code CODE` | 过滤退出码 |
-| `-s, --since TIME` | 起始时间 (ISO 8601 或 `1h`, `24h`) |
-| `-u, --until TIME` | 截止时间 |
-| `-k, --keyword TEXT` | 关键词搜索 |
+| `--rid RID` | 运行 ID |
+| `--level LEVEL` | 日志级别 |
+| `--module MODULE` | 模块名 (支持 `*` 通配) |
+| `--error-code CODE` | 错误码 |
+| `--tool TOOL` | 工具名称 |
+| `--exit-code CODE` | 退出码 |
+| `--op OP` | 文件操作类型 |
+| `--path PATH` | 文件路径 (支持通配) |
+| `--choice CHOICE` | 决策选择 |
+| `--keyword TEXT` | 全文搜索 |
+| `--since TIME` | 起始时间 |
+| `--until TIME` | 截止时间 |
+| `--min-dur MS` | 最小耗时 (ms) |
+| `--max-dur MS` | 最大耗时 (ms) |
+| `--pid PID` | 进程 ID |
+| `--tid TID` | 堆栈跟踪 ID |
 | `--limit N` | 返回条数 (默认 100) |
-| `--format FORMAT` | 输出格式 |
+| `--offset N` | 分页偏移 |
+| `--order-by FIELD` | 排序: `ts_asc`, `ts_desc`, `dur_desc` |
+| `--file-pattern PATTERN` | 文件名匹配 |
+| `--format FMT` | 输出: `table`, `json`, `jsonl`, `csv` |
 
-**示例**:
+---
+
+### 3.4 `trace` 命令
+
 ```bash
-# 查询最近 1 小时的错误
-agentic-logger query -l ERROR -s 1h
+# 追踪一次完整运行
+agentic-logger trace --rid 550e8400
 
-# 查询失败的 bash 命令
-agentic-logger query -t bash -e 1
+# 包含堆栈跟踪
+agentic-logger trace --rid 550e8400 --include-traceback
 
-# 关键词搜索
-agentic-logger query -k "npm install"
-
-# 时间范围
-agentic-logger query -s "2026-07-21T10:00:00Z" -u "2026-07-21T11:00:00Z"
-
-# JSON 输出
-agentic-logger query -l ERROR --format json
+# 过滤级别
+agentic-logger trace --rid 550e8400 --level ERROR
 ```
 
 ---
 
-### 3.5 `stats` - 统计分析
+### 3.5 `stats` 命令
 
-**用法**:
 ```bash
-agentic-logger stats [options]
-```
+# 按错误码统计
+agentic-logger stats --group-by error_code --since 24h
 
-**选项**:
-
-| 选项 | 说明 | 默认 |
-|------|------|------|
-| `-s, --since TIME` | 起始时间 | `24h` |
-| `-g, --group-by FIELD` | 分组: `level`, `tool`, `hour`, `module` | `level` |
-| `--top N` | Top N 结果 | 10 |
-| `--format FORMAT` | 输出格式 | `table` |
-
-**示例**:
-```bash
-# 按级别统计
-agentic-logger stats -g level
-
-# 按工具统计
-agentic-logger stats -g tool -s 7d
+# 按模块统计
+agentic-logger stats --group-by module
 
 # 按小时统计
-agentic-logger stats -g hour -s 24h
+agentic-logger stats --group-by hour --since 7d
+
+# 按进程统计
+agentic-logger stats --group-by pid
+
+# 按文件名统计
+agentic-logger stats --group-by file
+```
+
+---
+
+### 3.6 `tail` 命令
+
+```bash
+# 实时查看 (原始 JSONL)
+agentic-logger tail --follow
+
+# 过滤级别
+agentic-logger tail --follow --level ERROR
+
+# 过滤文件
+agentic-logger tail --follow --file-pattern "*main*"
+```
+
+---
+
+### 3.7 `traceback` 命令
+
+```bash
+# 获取堆栈跟踪
+agentic-logger traceback --tid trace_001
+```
+
+---
+
+### 3.8 `list-files` 命令
+
+```bash
+# 列出所有日志文件
+agentic-logger list-files
+
+# 按日期过滤
+agentic-logger list-files --since 2026-07-20
+
+# 按程序名过滤
+agentic-logger list-files --program my_agent
+
+# 显示文件大小
+agentic-logger list-files --size
 ```
 
 **输出示例**:
 ```
-Level Statistics (last 24h)
-┌──────────┬───────┬────────────┐
-│ Level    │ Count │ Percentage │
-├──────────┼───────┼────────────┤
-│ INFO     │   800 │     64.8%  │
-│ TOOL     │   250 │     20.3%  │
-│ ERROR    │   100 │      8.1%  │
-│ FILE_OP  │    84 │      6.8%  │
-└──────────┴───────┴────────────┘
-Total: 1234 entries
+File                                          Size    Entries  Backend
+my_agent_main_2026-07-21_103000.jsonl         2.3MB   1234     jsonl
+my_agent_worker_2026-07-21_103005.sqlite      15MB    45678    sqlite
+build_script_npm_2026-07-21_110000.jsonl      0.5MB   234      jsonl
 ```
 
 ---
 
-### 3.6 `export` - 导出日志
+## 4. Python SDK (读取端)
 
-**用法**:
-```bash
-agentic-logger export [options]
-```
-
-**选项**:
-
-| 选项 | 说明 |
-|------|------|
-| `-s, --since TIME` | 起始时间 |
-| `-f, --format FORMAT` | 格式: `json`, `csv`, `jsonl` |
-| `-o, --output FILE` | 输出文件 |
-
-**示例**:
-```bash
-# 导出为 JSON
-agentic-logger export -s 7d -f json -o logs.json
-
-# 导出为 CSV
-agentic-logger export -s 24h -f csv -o logs.csv
-
-# 导出为 JSONL (保持原格式)
-agentic-logger export -s 24h -f jsonl -o logs.jsonl
-```
-
----
-
-## 4. REST API
-
-### 4.1 概述
-
-HTTP REST API 用于系统集成。
-
-**Base URL**: `http://localhost:8080/api/v1`
-
-### 4.2 Endpoints
-
-#### `GET /api/v1/logs` - 查询日志
-
-**参数** (Query String):
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `level` | string | 日志级别 |
-| `tool` | string | 工具名称 |
-| `exit_code` | integer | 退出码 |
-| `since` | string | 起始时间 (ISO 8601) |
-| `until` | string | 截止时间 |
-| `keyword` | string | 关键词 |
-| `limit` | integer | 返回条数 (默认 100) |
-
-**示例**:
-```bash
-curl "http://localhost:8080/api/v1/logs?level=ERROR&since=2026-07-21T00:00:00Z&limit=50"
-```
-
-**响应**:
-```json
-{
-  "count": 50,
-  "logs": [
-    {"ts": "...", "level": "ERROR", "msg": "..."},
-    ...
-  ]
-}
-```
-
----
-
-#### `GET /api/v1/stats` - 统计分析
-
-**参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `since` | string | 起始时间 |
-| `group_by` | string | 分组方式 |
-
-**示例**:
-```bash
-curl "http://localhost:8080/api/v1/stats?since=24h&group_by=level"
-```
-
----
-
-#### `POST /api/v1/analyze` - 深度分析
-
-**请求体**:
-```json
-{
-  "time_range": "24h",
-  "focus": "errors",
-  "top_n": 10
-}
-```
-
-**示例**:
-```bash
-curl -X POST "http://localhost:8080/api/v1/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"time_range": "24h", "focus": "errors"}'
-```
-
----
-
-#### `GET /api/v1/stream` - 实时流 (WebSocket)
-
-**连接**:
-```bash
-wscat -c "ws://localhost:8080/api/v1/stream?level=ERROR"
-```
-
----
-
-### 4.3 认证 (可选)
-
-```bash
-# API Key
-curl -H "Authorization: Bearer YOUR_API_KEY" "http://localhost:8080/api/v1/logs"
-```
-
----
-
-## 5. Python SDK (读取端)
-
-### 5.1 导入
+### 4.1 导入
 
 ```python
-from agentic_logger import LogReader, LogAnalyzer
+from agentic_logger import LogQueryEngine
 ```
 
-### 5.2 LogReader
+### 4.2 查询
 
 ```python
-reader = LogReader(log_dir="./logs")
+engine = LogQueryEngine(log_dir="./logs")
 
-# 查询日志
-logs = reader.query(level="ERROR", since="1h", limit=100)
-for log in logs:
-    print(log)
+# 精确查询
+logs = engine.query(
+    rid="550e8400",
+    level="ERROR",
+    min_dur=1000,
+    order_by="dur_desc",
+    limit=20
+)
 
-# 实时流
-for log in reader.stream(level="ERROR"):
-    print(log)
-```
-
-### 5.3 LogAnalyzer
-
-```python
-analyzer = LogAnalyzer(log_dir="./logs")
+# 链路追踪
+trace = engine.trace(rid="550e8400", include_traceback=True)
 
 # 统计分析
-stats = analyzer.stats(since="24h", group_by="level")
-print(stats)
+stats = engine.stats(since="24h", group_by="error_code")
 
 # 深度分析
-analysis = analyzer.analyze(time_range="24h", focus="errors")
-print(analysis.summary)
+analysis = engine.analyze(time_range="24h", focus="errors", top_n=5)
+
+# 实时流
+for log in engine.stream(level="ERROR", rid="550e8400"):
+    print(log)
 ```
 
 ---
 
-## 6. 高级功能
+## 5. 查询引擎实现
 
-### 6.1 GLiNER 增强 (外部日志)
-
-对于非 AgenticLogger 格式的外部日志，可使用 GLiNER 进行实体识别：
+### 5.1 统一查询接口
 
 ```python
-from agentic_logger import ExternalLogParser
-
-parser = ExternalLogParser(use_gliner=True)
-result = parser.parse("2026-07-21 ERROR [module] Failed to connect")
-# => {"ts": "...", "level": "ERROR", "module": "module", "msg": "Failed to connect"}
+class LogQueryEngine:
+    """统一查询引擎，自动选择 JSONL 或 SQLite 后端"""
+    
+    def __init__(self, log_dir="./logs"):
+        self.log_dir = Path(log_dir)
+    
+    def query(self, **filters):
+        """多条件查询"""
+        backends = self._detect_backends()
+        results = []
+        
+        for backend in backends:
+            results.extend(backend.query(**filters))
+        
+        # 排序 + 分页
+        results = self._sort_and_paginate(results, **filters)
+        return results
+    
+    def _detect_backends(self):
+        """扫描日志目录，检测所有后端"""
+        backends = []
+        for f in self.log_dir.iterdir():
+            if f.suffix == ".jsonl":
+                backends.append(JSONLBackend(file_path=f))
+            elif f.suffix == ".sqlite":
+                backends.append(SQLiteBackend(file_path=f))
+        return backends
 ```
 
-### 6.2 NuExtract 增强 (深度抽取)
+### 5.2 JSONL 查询 (流式解析)
 
 ```python
-from agentic_logger import DeepExtractor
+class JSONLBackend:
+    def query(self, **filters):
+        results = []
+        with open(self.file_path, 'r') as f:
+            for line in f:
+                entry = json.loads(line)
+                if self._match(entry, filters):
+                    results.append(entry)
+        return results
+    
+    def _match(self, entry, filters):
+        """多字段匹配"""
+        for key, value in filters.items():
+            if value is None:
+                continue
+            if key == "module" and "*" in value:
+                # 通配符匹配
+                import fnmatch
+                if not fnmatch.fnmatch(entry.get("module", ""), value):
+                    return False
+            elif key == "min_dur":
+                if (entry.get("dur") or 0) < value:
+                    return False
+            elif key == "max_dur":
+                if (entry.get("dur") or 0) > value:
+                    return False
+            elif key in entry and entry[key] != value:
+                return False
+        return True
+```
 
-extractor = DeepExtractor(use_nuextract=True)
-result = extractor.extract(error_logs)
-# => {"root_cause": "...", "suggested_action": "..."}
+### 5.3 SQLite 查询 (索引加速)
+
+```python
+class SQLiteBackend:
+    def query(self, **filters):
+        query = "SELECT * FROM logs WHERE 1=1"
+        params = []
+        
+        if filters.get("rid"):
+            query += " AND rid = ?"
+            params.append(filters["rid"])
+        if filters.get("level"):
+            query += " AND level = ?"
+            params.append(filters["level"])
+        if filters.get("error_code"):
+            query += " AND error_code = ?"
+            params.append(filters["error_code"])
+        if filters.get("min_dur"):
+            query += " AND dur >= ?"
+            params.append(filters["min_dur"])
+        # ... 其他字段
+        
+        query += f" ORDER BY ts DESC LIMIT {filters.get('limit', 100)}"
+        
+        cursor = self.conn.execute(query, params)
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
 ```
