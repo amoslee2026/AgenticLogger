@@ -19,9 +19,9 @@ class TestSQLiteBackend:
 
         # Write entries
         entries = [
-            {"ts": "2026-01-01T00:00:00Z", "level": "INFO", "msg": "Test 1", "rid": "rid1"},
-            {"ts": "2026-01-01T00:00:01Z", "level": "ERROR", "msg": "Test 2", "rid": "rid1"},
-            {"ts": "2026-01-01T00:00:02Z", "level": "INFO", "msg": "Test 3", "rid": "rid2"},
+            {"ts": "2026-01-01T00:00:00Z", "level": "INFO", "msg": "Test 1", "rid": "rid1", "pid": "12345", "seq": 1},
+            {"ts": "2026-01-01T00:00:01Z", "level": "ERROR", "msg": "Test 2", "rid": "rid1", "pid": "12345", "seq": 2},
+            {"ts": "2026-01-01T00:00:02Z", "level": "INFO", "msg": "Test 3", "rid": "rid2", "pid": "12345", "seq": 3},
         ]
         for entry in entries:
             backend.write(entry)
