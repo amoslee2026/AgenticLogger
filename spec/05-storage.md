@@ -41,28 +41,67 @@ logs/
 
 ### 2.3 自动选择后端
 
+> 评审修复 (AGG-003): 明确定义 auto 模式的启发式规则，替代不存在的 `estimated_size_large()`。
+
 ```python
+def select_backend(log_dir, program, command):
+    """
+    根据启发式规则选择存储后端。
+    
+    规则 (按优先级):
+    1. 环境变量 AGENTIC_STORAGE 覆盖一切
+    2. 检测多进程环境 → SQLite (并发安全)
+    3. log_dir 中已有同名 program 的 SQLite 文件 → SQLite (一致性)
+    4. 预期大日志的命令模式 (build/test/ci 等) → SQLite
+    5. 默认 → JSONL
+    """
+    import os, multiprocessing
+    
+    # 规则 1: 环境变量覆盖
+    env_hint = os.environ.get('AGENTIC_STORAGE')
+    if env_hint in ('jsonl', 'sqlite'):
+        return env_hint
+    
+    # 规则 2: 多进程环境
+    if multiprocessing.active_children() or os.environ.get('AGENTIC_PARENT_RID'):
+        return 'sqlite'
+    
+    # 规则 3: 已有 SQLite 文件 → 保持一致
+    existing = list(Path(log_dir).glob(f"{re.sub(r'[^\\w\\-]', '_', program)}*.sqlite"))
+    if existing:
+        return 'sqlite'
+    
+    # 规则 4: 预期大日志的命令模式
+    LARGE_LOG_KEYWORDS = {'build', 'test', 'ci', 'deploy', 'migrate', 'sync', 'batch'}
+    cmd_lower = (command or '').lower()
+    if any(kw in cmd_lower for kw in LARGE_LOG_KEYWORDS):
+        return 'sqlite'
+    
+    # 规则 5: 默认 JSONL
+    return 'jsonl'
+
+
 def generate_filename(program, command, log_dir, storage="auto"):
     """生成日志文件名"""
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
-    time_str = now.strftime("%H%M%S")
+    # 微秒精度避免同名冲突 (评审修复 AGG-020/B07)
+    time_str = now.strftime("%H%M%S") + f"{now.microsecond:06d}"
     
     if command is None:
         command = f"pid{os.getpid()}"
     
-    # 清理非法字符
-    safe_program = re.sub(r'[^\w\-]', '_', program)
-    safe_command = re.sub(r'[^\w\-]', '_', command)
+    # 清理非法字符 + 长度截断 (评审修复 S10)
+    safe_program = re.sub(r'[^\w\-]', '_', program)[:50]
+    safe_command = re.sub(r'[^\w\-]', '_', command)[:50]
     
+    # 选择后端
     if storage == "auto":
-        # 根据预期大小自动选择
-        ext = "sqlite" if estimated_size_large() else "jsonl"
-    elif storage == "sqlite":
-        ext = "sqlite"
+        backend = select_backend(log_dir, program, command)
     else:
-        ext = "jsonl"
+        backend = storage
     
+    ext = "sqlite" if backend == "sqlite" else "jsonl"
     filename = f"{safe_program}_{safe_command}_{date_str}_{time_str}.{ext}"
     return Path(log_dir) / filename
 ```
