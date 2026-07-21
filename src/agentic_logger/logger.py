@@ -134,14 +134,25 @@ class AgentLogger:
             "rid": self._fields.rid,
         }
 
-        # Backend (MVP: JSONL only; SQLite is Phase 2)
-        self._backend = JSONLBackend(
-            file_path=self._file_path,
-            max_files=max_files,
-            max_size_mb=max_size_mb,
-            circular=circular,
-            global_ctx=self._global_ctx,
-        )
+        # Backend selection
+        backend_type = _select_backend(self.log_dir, self.program, self.command) \
+            if storage == "auto" else storage
+
+        if backend_type == "sqlite":
+            self._backend = SQLiteBackend(
+                file_path=self._file_path,
+                circular=circular,
+                max_size_mb=max_size_mb,
+                global_ctx=self._global_ctx,
+            )
+        else:
+            self._backend = JSONLBackend(
+                file_path=self._file_path,
+                max_files=max_files,
+                max_size_mb=max_size_mb,
+                circular=circular,
+                global_ctx=self._global_ctx,
+            )
 
         # Lifecycle tracking + atexit safety net
         self._run_started = False
