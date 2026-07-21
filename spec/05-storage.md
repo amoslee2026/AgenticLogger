@@ -346,7 +346,13 @@ class SQLiteReader:
 
 ### 5.1 JSONL 循环写入
 
-**策略**: 文件达到大小上限后，创建新文件，删除最旧的文件。
+> 评审修复 (AGG-001): 采用"先改名→创建新文件→删除旧文件"的安全顺序，消除数据丢失窗口。
+
+**策略**: 文件达到大小上限后：
+1. 将当前文件改名为 `.rotating` 后缀（标记为正在轮转）
+2. 创建新文件并验证写入成功
+3. 删除最旧的已完成文件
+4. 移除 `.rotating` 后缀
 
 ```python
 class CircularJSONLBackend(JSONLBackend):
@@ -354,30 +360,63 @@ class CircularJSONLBackend(JSONLBackend):
         super().__init__(file_path)
         self.max_files = max_files
         self.max_size_bytes = max_size_mb * 1024 * 1024
-        self._base_pattern = self._extract_base_pattern(file_path)
+        self._recover_from_interrupted_rotation()
     
     def write(self, entry):
         if self.file_path.stat().st_size > self.max_size_bytes:
-            self._rotate()
+            self._safe_rotate()
         super().write(entry)
     
-    def _rotate(self):
-        """轮转: 删除最旧，创建新文件"""
-        files = sorted(self._get_log_files())
+    def _safe_rotate(self):
+        """安全轮转: 先改名→创建新文件→删除旧文件"""
+        import time
         
-        # 删除最旧的文件
-        if len(files) >= self.max_files:
-            files[0].unlink()
+        # Step 1: 将当前文件标记为正在轮转 (改名加 .rotating 后缀)
+        rotating_path = self.file_path.with_suffix('.jsonl.rotating')
+        self.file_path.rename(rotating_path)
         
-        # 创建新文件 (时间戳递增)
-        now = datetime.now()
-        new_name = f"{self._base_pattern}_{now.strftime('%H%M%S')}.jsonl"
-        self.file_path = self.file_path.parent / new_name
+        try:
+            # Step 2: 创建新文件并验证可写入
+            new_path = self._generate_next_filename()
+            with open(new_path, 'w') as f:
+                f.write('')  # 验证可创建
+            self.file_path = new_path
+            # 重新写入全局上下文
+            self._write_global_context()
+            
+            # Step 3: 删除最旧的已完成文件 (不超过 max_files)
+            files = sorted(self._get_completed_files())
+            while len(files) >= self.max_files:
+                files[0].unlink()
+                # 同步清理对应的 .tracebacks 文件
+                tb_file = files[0].with_suffix('.tracebacks')
+                if tb_file.exists():
+                    tb_file.unlink()
+                files = sorted(self._get_completed_files())
+            
+            # Step 4: 移除 .rotating 后缀 (轮转完成)
+            rotating_path.rename(rotating_path.with_suffix('.jsonl'))
+            
+        except OSError as e:
+            # 新文件创建失败 → 回滚：恢复原文件名
+            rotating_path.rename(self.file_path)
+            raise RuntimeError(f"Rotation failed, original file restored: {e}")
     
-    def _get_log_files(self):
-        """获取同组的所有日志文件"""
-        pattern = self._base_pattern + "*.jsonl"
-        return list(self.file_path.parent.glob(pattern))
+    def _recover_from_interrupted_rotation(self):
+        """恢复被中断的轮转"""
+        for f in self.file_path.parent.glob("*.rotating"):
+            # 存在 .rotating 文件说明上次轮转未完成
+            original = f.with_suffix('.jsonl')
+            if not original.exists():
+                f.rename(original)  # 恢复原文件名
+            else:
+                f.unlink()  # 原文件已存在，删除残留
+    
+    def _get_completed_files(self):
+        """获取所有已完成轮转的文件 (不含 .rotating)"""
+        pattern = self._extract_base_pattern(self.file_path) + "*.jsonl"
+        return [f for f in self.file_path.parent.glob(pattern) 
+                if not f.name.endswith('.rotating')]
 ```
 
 ### 5.2 SQLite 循环写入
