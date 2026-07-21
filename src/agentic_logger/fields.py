@@ -34,6 +34,10 @@ class AutoFields:
         rid: Optional run ID.  If *None*, a UUID4 hex[:8] is generated.
              Pass a parent's ``rid`` to propagate across subprocesses
              (@spec-ref: spec/03-write-sdk.md — 评审修复 U03).
+
+    @spec-why: Per-instance rid ensures all entries from one execution share the same run ID.
+    @spec-invariant: Does NOT generate new rids after construction — rid is immutable per instance.
+    @last-changed: 2026-07-21
     """
 
     def __init__(self, rid: str | None = None):
