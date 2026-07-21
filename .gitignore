@@ -38,3 +38,21 @@ Thumbs.db
 
 # 临时删除目录（按全局规则）
 temp/deleted/
+
+# Research reports
+research_reports/
+
+# Coverage reports
+.coverage/
+htmlcov/
+.coverage.*
+
+# Tests
+tests/
+test/
+
+# Specs
+spec/
+
+# Project CLAUDE.md
+CLAUDE.md
