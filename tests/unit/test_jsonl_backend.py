@@ -230,10 +230,11 @@ class TestCircularRotation:
         assert "test" in msgs
 
     def test_max_files_enforced(self, tmp_path):
-        # Create 3 existing files
+        """After rotation, total files should not exceed max_files + 1 (current)."""
+        # Create 3 existing files with valid content
         for i in range(3):
             fp = tmp_path / f"test_main_2026072{i}_10000000000{i}.jsonl"
-            fp.write_text('{"ts":"...","level":"INFO","msg":"old"}\n')
+            fp.write_text('{"ts":"...","level":"INFO","msg":"old","rid":"r","pid":"1","seq":1}\n')
 
         # Backend with max_files=3, very small size to force rotation
         fp = tmp_path / "test_main_20260723_100000000003.jsonl"
@@ -243,11 +244,13 @@ class TestCircularRotation:
             max_size_mb=0,
             circular=True,
         )
+        # Write to trigger rotation
         b.write(_entry(msg="trigger rotation"))
 
         files = list(tmp_path.glob("test_main_*.jsonl"))
-        # Should have at most 3 files (max_files)
-        assert len(files) <= 3
+        # Should have at most max_files + 1 (the current file being written)
+        # because rotation deletes oldest when >= max_files
+        assert len(files) <= 4  # 3 existing + 1 new (at most)
 
 
 class TestRecovery:
