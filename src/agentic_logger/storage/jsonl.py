@@ -3,6 +3,8 @@
 @spec-ref: spec/05-storage.md §3  — JSONL 后端
 @spec-ref: spec/05-storage.md §5.1 — JSONL 循环写入
 @spec-ref: spec/05-storage.md §6   — 堆栈跟踪分离存储
+@last-changed: 2026-07-21
+@log-module: agentic_logger.storage.jsonl
 
 Each log entry is a single line of JSON, appended to the file.  The
 backend supports:
