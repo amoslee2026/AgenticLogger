@@ -30,6 +30,7 @@ from pathlib import Path
 from agentic_logger.error_codes import ErrorCode
 from agentic_logger.fields import AutoFields, auto_module
 from agentic_logger.storage.jsonl import JSONLBackend
+from agentic_logger.storage.sqlite import SQLiteBackend
 
 
 def _sanitize_filename_part(s: str, max_len: int = 50) -> str:
