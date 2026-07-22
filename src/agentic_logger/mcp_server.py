@@ -308,6 +308,39 @@ def handle_traceback(log_dir: Path, tid: str) -> dict | None:
 
 
 # ------------------------------------------------------------------
+# Tool dispatch (sync, testable, exception-isolated)
+# ------------------------------------------------------------------
+
+
+def dispatch_tool(log_dir: Path, name: str, arguments: dict) -> dict:
+    """Synchronously dispatch an MCP tool call, isolating ALL exceptions.
+
+    Never raises: unknown tools, missing/invalid arguments, and unexpected
+    backend errors all yield a structured ``{"error": ...}`` dict instead of
+    surfacing as an unhandled exception inside the async MCP handler (which
+    would return an opaque 500 to the client).
+    (@spec-ref: spec/04-read-interface.md — 评审修复: call_tool 无异常隔离)
+    """
+    try:
+        if name == "agentic_log_query":
+            return handle_query(log_dir, **arguments)
+        if name == "agentic_log_trace":
+            return handle_trace(log_dir, **arguments)
+        if name == "agentic_log_stats":
+            return handle_stats(log_dir, **arguments)
+        if name == "agentic_log_traceback":
+            result = handle_traceback(log_dir, **arguments)
+            if result is None:
+                return {"error": f"Traceback not found: {arguments.get('tid')}"}
+            return result
+        return {"error": f"Unknown tool: {name}"}
+    except TypeError as e:
+        return {"error": f"Invalid argument: {e}"}
+    except Exception as e:  # defensive — keep the server alive
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+# ------------------------------------------------------------------
 # MCP Server Factory
 # ------------------------------------------------------------------
 
