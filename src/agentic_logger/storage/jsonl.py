@@ -84,23 +84,26 @@ class JSONLBackend:
     def write(self, entry: dict) -> None:
         """Append a single log entry as one JSON line.
 
-        If *circular* mode is enabled and the current file has exceeded
-        *max_size_mb*, a safe rotation is performed before writing.
+        Thread-safe via ``self._lock``.  If *circular* mode is enabled and the
+        current file has exceeded *max_size_mb*, a safe rotation is performed
+        before writing.
         """
-        if self.circular and self._should_rotate():
-            self._safe_rotate()
+        with self._lock:
+            if self.circular and self._should_rotate():
+                self._safe_rotate()
 
-        line = json.dumps(entry, ensure_ascii=False, default=str)
-        with open(self.file_path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-        self._write_count += 1
+            line = json.dumps(entry, ensure_ascii=False, default=str)
+            with open(self.file_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            self._write_count += 1
 
     def write_batch(self, entries: list[dict]) -> None:
-        """Append multiple log entries in a single I/O operation."""
-        lines = [json.dumps(e, ensure_ascii=False, default=str) for e in entries]
-        with open(self.file_path, "a", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        self._write_count += len(entries)
+        """Append multiple log entries in a single I/O operation (thread-safe)."""
+        with self._lock:
+            lines = [json.dumps(e, ensure_ascii=False, default=str) for e in entries]
+            with open(self.file_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            self._write_count += len(entries)
 
     def save_traceback(
         self, tid: str, traceback_text: str, exc_type: str, exc_msg: str
