@@ -31,16 +31,32 @@ from pathlib import Path
 from typing import Any
 
 from agentic_logger.storage.jsonl import JSONLBackend
+from agentic_logger.storage.sqlite import SQLiteBackend
 
 
-def _load_all_backends(log_dir: Path) -> list[JSONLBackend]:
-    """Discover all ``.jsonl`` files in *log_dir* and wrap them."""
-    backends = []
+def _load_all_backends(log_dir: Path) -> list[JSONLBackend | SQLiteBackend]:
+    """Discover all log files in *log_dir* and wrap them in their backend.
+
+    Both ``.jsonl`` and ``.sqlite`` files are loaded so the read layer is
+    backend-agnostic.  (@spec-ref: spec/04-read-interface.md — 评审修复:
+    SQLite 日志原对读取层不可见)
+    """
+    backends: list[JSONLBackend | SQLiteBackend] = []
+    # JSONL files
     for f in sorted(log_dir.glob("*.jsonl")):
         if f.name.endswith(".rotating"):
             continue
         try:
             backends.append(JSONLBackend(file_path=f))
+        except Exception:
+            continue
+    # SQLite files
+    for f in sorted(log_dir.glob("*.sqlite")):
+        # Skip SQLite sidecar journals
+        if f.name.endswith(("-wal", "-shm")):
+            continue
+        try:
+            backends.append(SQLiteBackend(file_path=f))
         except Exception:
             continue
     return backends
