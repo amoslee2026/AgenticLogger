@@ -347,7 +347,7 @@ class TestRecovery:
         rotating.write_text('{"ts":"...","level":"INFO","msg":"interrupted"}\n')
 
         fp = tmp_path / "test_main_20260721_100000000001.jsonl"
-        b = JSONLBackend(file_path=fp)
+        JSONLBackend(file_path=fp)
 
         # .rotating should be recovered to .jsonl
         assert not rotating.exists()
