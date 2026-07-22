@@ -428,12 +428,9 @@ class JSONLBackend:
             "level": "__GLOBAL_CTX__",
             "msg": "Global context",
             "module": "__system__",
-            "tid": None,
             "rid": self._global_ctx.get("rid", ""),
             "pid": str(os.getpid()),
             "seq": 0,
-            "dur": None,
-            "error_code": None,
             **self._global_ctx,
         }
         line = json.dumps(ctx_entry, ensure_ascii=False, default=str)
