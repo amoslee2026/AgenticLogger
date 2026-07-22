@@ -485,3 +485,81 @@ class TestThreadSafety:
             t.join()
 
         assert len(collected) == len(set(collected)), "duplicate seq under concurrency"
+
+
+class TestSelectBackend:
+    """Cover _select_backend heuristic branches."""
+
+    def test_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGENTIC_STORAGE", "sqlite")
+        lg = AgentLogger(program="env", command="c", log_dir=tmp_path / "l1")
+        assert lg.file_path.suffix == ".sqlite"
+
+    def test_existing_sqlite_selects_sqlite(self, tmp_path):
+        d = tmp_path / "l2"
+        d.mkdir()
+        (d / "env_prog_123.sqlite").touch()
+        lg = AgentLogger(program="env_prog", command="c", log_dir=d)
+        assert lg.file_path.suffix == ".sqlite"
+
+    def test_large_log_keyword_selects_sqlite(self, tmp_path):
+        lg = AgentLogger(program="kw", command="run_tests", log_dir=tmp_path / "l3")
+        assert lg.file_path.suffix == ".sqlite"
+
+    def test_default_jsonl(self, tmp_path):
+        lg = AgentLogger(program="def", command="c", log_dir=tmp_path / "l4")
+        assert lg.file_path.suffix == ".jsonl"
+
+
+class TestLoggerLifecycleExtras:
+    def test_set_global_context(self, tmp_path):
+        lg = AgentLogger(program="g", command="c", log_dir=tmp_path)
+        lg.set_global_context(custom="value", n=3)
+        assert lg._global_ctx["custom"] == "value"
+
+    def test_run_start_with_ctx(self, tmp_path):
+        lg = AgentLogger(program="s", command="c", log_dir=tmp_path)
+        lg.run_start(ctx={"phase": "init"})
+        entries = _read_entries(lg.file_path)
+        assert any(e.get("event") == "run_start" and e.get("phase") == "init" for e in entries)
+
+    def test_run_end_with_ctx(self, tmp_path):
+        lg = AgentLogger(program="e", command="c", log_dir=tmp_path)
+        lg.run_start()
+        lg.run_end(exit_code=0, dur=42, ctx={"result": "ok"})
+        entries = _read_entries(lg.file_path)
+        assert any(e.get("event") == "run_end" and e.get("result") == "ok" for e in entries)
+
+    def test_auto_run_end_emits_when_not_closed(self, tmp_path):
+        lg = AgentLogger(program="a", command="c", log_dir=tmp_path)
+        lg.run_start()
+        # simulate a process exit without explicit run_end
+        lg._auto_run_end()
+        entries = _read_entries(lg.file_path)
+        assert any(e.get("event") == "run_end" and e.get("exit_code") == 1 for e in entries)
+
+    def test_close_releases_backend(self, tmp_path):
+        lg = AgentLogger(program="cl", command="c", log_dir=tmp_path, storage="sqlite")
+        lg.info("x")
+        lg.close()  # must not raise; idempotent
+        lg.close()
+
+    def test_write_failure_goes_to_stderr_not_raise(self, tmp_path, capsys):
+        lg = AgentLogger(program="w", command="c", log_dir=tmp_path)
+
+        class BoomBackend:
+            file_path = lg.file_path
+
+            def write(self, entry):
+                raise OSError("disk on fire")
+
+        lg._backend = BoomBackend()
+        lg.info("this should not raise")  # error printed to stderr
+        assert "disk on fire" in capsys.readouterr().err
+
+
+class TestGenerateFilename:
+    def test_filename_auto_jsonl(self, tmp_path):
+        lg = AgentLogger(program="fn", command="c", log_dir=tmp_path)
+        name = lg.file_path.name
+        assert name.startswith("fn_c_") and name.endswith(".jsonl")
