@@ -67,6 +67,7 @@ class JSONLBackend:
         self.circular = circular
         self._global_ctx = global_ctx or {}
         self._write_count = 0
+        self._lock = threading.Lock()
 
         # Recover from a rotation that was interrupted by a crash on a
         # previous run (see _safe_rotate for the forward path).
