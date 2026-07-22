@@ -494,6 +494,10 @@ class JSONLBackend:
                 # Level-specific: must be present AND match
                 if key not in entry or str(entry[key]) != str(value):
                     return False
-            elif key in entry and str(entry[key]) != str(value):
+            # Exact-match: the entry must CONTAIN the key and it must match.
+            # (Previously a missing key let the entry pass — which leaked the
+            # __GLOBAL_CTX__ header and non-matching entries through filters
+            # on optional fields like error_code / path / tid.)
+            elif key not in entry or str(entry[key]) != str(value):
                 return False
         return True
