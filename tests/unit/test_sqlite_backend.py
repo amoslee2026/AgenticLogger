@@ -301,8 +301,9 @@ class TestSQLiteCoverage:
         b.close()
 
     def test_cleanup_time_and_size_and_orphans(self, tmp_path):
-        # Force time-based + size-based cleanup via tiny limits.
-        b = SQLiteBackend(tmp_path / "c.sqlite", circular=True, max_size_mb=1,
+        # Force time-based + size-based cleanup via tiny limits (max_size_mb=0
+        # guarantees the size-based delete branch runs).
+        b = SQLiteBackend(tmp_path / "c.sqlite", circular=True, max_size_mb=0,
                           retention_hours=0)
         # retention_hours=0 → cutoff ~now → all old ts get deleted by time branch
         from datetime import datetime, timezone
