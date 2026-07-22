@@ -389,3 +389,16 @@ class TestCliRemaining:
         cmd_tail(args)
         out = capsys.readouterr().out
         assert out.count("dup") == 1
+
+    def test_tail_module_and_error_code_filters(self, tmp_path, capsys):
+        """Exercise tail's module (fnmatch) + error_code filter lines."""
+        from agentic_logger.cli import cmd_tail, build_parser
+        log_dir = tmp_path / "logs"
+        logger = AgentLogger(program="t", command="c", log_dir=log_dir)
+        logger.info("plain", module="agent.x")
+        logger.error("boom", error_code=ErrorCode.IO_NOT_FOUND)
+        args = build_parser().parse_args(
+            ["--log-dir", str(log_dir), "tail", "--module", "agent.*",
+             "--error-code", "IO_NOT_FOUND"]
+        )
+        assert cmd_tail(args) == 0
