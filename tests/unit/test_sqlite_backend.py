@@ -326,3 +326,9 @@ class TestSQLiteCoverage:
         rows = b.query(level="TOOL")
         assert len(rows) == 1
         b.close()
+
+    def test_get_time_range_empty(self, tmp_path):
+        """get_time_range on an empty DB returns None (covers the fallback)."""
+        b = SQLiteBackend(tmp_path / "empty.sqlite")
+        assert b.get_time_range() is None
+        b.close()
