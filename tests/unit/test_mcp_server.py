@@ -370,7 +370,7 @@ class TestMainRuntime:
             async def __aexit__(self, *a):
                 return False
 
-        async def fake_stdio():
+        def fake_stdio():
             return _Ctx()
         monkeypatch.setattr(stdio_mod, "stdio_server", fake_stdio)
 
