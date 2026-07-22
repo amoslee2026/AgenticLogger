@@ -386,11 +386,15 @@ class SQLiteBackend:
 
     def _cleanup_if_needed(self) -> None:
         """Time-based and size-based cleanup (called under lock)."""
-        # Time-based: delete records older than retention_hours
-        self.conn.execute(
-            "DELETE FROM logs WHERE ts < datetime('now', ?)",
-            (f"-{self.retention_seconds} seconds",),
-        )
+        # Time-based: delete records older than retention_hours.
+        # Compute the cutoff in Python so its format matches the stored ts
+        # (ISO 8601 ``+00:00``); SQLite's ``datetime('now')`` yields
+        # ``'YYYY-MM-DD HH:MM:SS'`` which does NOT string-compare correctly
+        # against the stored format (space vs ``T``, no tz suffix).
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=self.retention_seconds)
+        ).isoformat(timespec="milliseconds")
+        self.conn.execute("DELETE FROM logs WHERE ts < ?", (cutoff,))
 
         # Size-based: if file exceeds limit, delete oldest 10%
         if self.file_path.stat().st_size > self.max_size_bytes:
