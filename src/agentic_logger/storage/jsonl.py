@@ -406,7 +406,7 @@ class JSONLBackend:
         if not self._global_ctx:
             return
         ctx_entry = {
-            "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "level": "__GLOBAL_CTX__",
             "msg": "Global context",
             "module": "__system__",
