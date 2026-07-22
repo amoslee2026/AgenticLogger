@@ -47,10 +47,6 @@ research_reports/
 .coverage.*
 htmlcov/
 
-# Tests
-tests/
-test/
-
 # Specs
 spec/
 
