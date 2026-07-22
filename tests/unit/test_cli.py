@@ -323,8 +323,6 @@ class TestFormatHelpers:
 
 class TestMain:
     def test_main_no_command_exits(self, populated_cli, capsys):
-        from agentic_logger.cli import main
-        import sys
         log_dir, _ = populated_cli
         with pytest.raises(SystemExit):
             main_with_args(["--log-dir", str(log_dir)])
@@ -337,7 +335,6 @@ class TestMain:
     def test_main_unknown_handler(self, populated_cli, capsys):
         # build_parser enforces a valid subcommand, so exercise main via a
         # malformed invocation path by calling handler dispatch directly.
-        from agentic_logger.cli import main
         with pytest.raises(SystemExit):
             main_with_args(["--log-dir", str(populated_cli[0]), "query"])
 
@@ -356,7 +353,6 @@ def main_with_args(argv):
 
 def _rid_of(log_dir):
     """Read the rid from the single log file's global context."""
-    from pathlib import Path
     import json as _j
     files = list(Path(log_dir).glob("*.jsonl"))
     with open(files[0]) as f:
