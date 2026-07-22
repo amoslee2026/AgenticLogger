@@ -397,6 +397,7 @@ class SQLiteBackend:
         self.conn.execute("DELETE FROM logs WHERE ts < ?", (cutoff,))
 
         # Size-based: if file exceeds limit, delete oldest 10%
+        size_cleanup = False
         if self.file_path.stat().st_size > self.max_size_bytes:
             total = self.conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
             delete_count = max(total // 10, 1)
@@ -405,8 +406,7 @@ class SQLiteBackend:
                 "(SELECT id FROM logs ORDER BY ts ASC LIMIT ?)",
                 (delete_count,),
             )
-            # TRUNCATE checkpoint to reclaim WAL space
-            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            size_cleanup = True
 
         # Clean orphaned tracebacks
         self.conn.execute(
@@ -414,7 +414,12 @@ class SQLiteBackend:
             "(SELECT DISTINCT tid FROM logs WHERE tid IS NOT NULL)"
         )
 
+        # Commit BEFORE checkpointing: TRUNCATE needs exclusive WAL access and
+        # fails with "database table is locked" while deletes are uncommitted.
         self.conn.commit()
+        if size_cleanup:
+            # TRUNCATE checkpoint to reclaim WAL space
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     # ------------------------------------------------------------------
     # Helpers
