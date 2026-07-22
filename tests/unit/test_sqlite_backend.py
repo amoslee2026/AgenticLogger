@@ -301,20 +301,16 @@ class TestSQLiteCoverage:
         b.close()
 
     def test_cleanup_time_and_size_and_orphans(self, tmp_path):
-        # Force time-based + size-based cleanup via tiny limits (max_size_mb=0
-        # guarantees the size-based delete branch runs).
+        # Force time-based + size-based + orphan cleanup via tiny limits.
+        # max_size_mb=0 guarantees the size-based delete branch; retention_hours=0
+        # makes every old-ts entry time-expired; an orphan traceback exercises the
+        # orphan-cleanup DELETE. Cleanup auto-runs every 100 writes (write=100).
         b = SQLiteBackend(tmp_path / "c.sqlite", circular=True, max_size_mb=0,
                           retention_hours=0)
-        # retention_hours=0 → cutoff ~now → all old ts get deleted by time branch
-        from datetime import datetime, timezone
-        for i in range(150):  # > 100 writes triggers cleanup
+        b.save_traceback("tb_orphan", "x", "Err", "m")  # orphan (no matching log)
+        for i in range(150):  # passes the 100-write cleanup trigger
             b.write({"ts": "2020-01-01T00:00:00.000+00:00", "level": "INFO",
                      "msg": f"m{i}", "rid": "r", "pid": "1", "seq": i})
-        # Insert an orphan traceback (no matching log) to exercise orphan cleanup
-        b.conn.execute("INSERT OR REPLACE INTO tracebacks (tid,traceback) VALUES (?,?)",
-                       ("tb_orphan", "x"))
-        b.conn.commit()
-        b._cleanup_if_needed()
         b.close()
 
     def test_row_to_dict_malformed_json(self, tmp_path):
