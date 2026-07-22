@@ -371,14 +371,18 @@ class TestJsonlCoverage:
         assert any(r.get("msg") == "ok" for r in results)
 
     def test_get_traceback_legacy_pipe_format(self, tmp_path):
-        """Reading must support the legacy tid|type|msg|tb sidecar format."""
+        """Reading must support the legacy tid|type|msg|tb sidecar format,
+        skipping blank / malformed-JSON / short lines along the way."""
         fp = tmp_path / "c.jsonl"
         b = JSONLBackend(file_path=fp)
         tb = fp.with_suffix(".tracebacks")
+        # Order matters: the scan must visit every degenerate line before the
+        # target so the skip branches (blank, bad-JSON, <4 fields) are exercised.
         tb.write_text(
-            "tb_old|ValueError|bad|Line1\\nLine2\n"   # legacy 4-field
-            "{broken json\n"                            # malformed JSON line
-            "short|two\n"                               # <4 fields
+            "\n"                                      # blank line -> continue
+            "{broken json\n"                          # starts with { but invalid JSON
+            "short|two\n"                             # non-{, <4 fields -> None
+            "tb_old|ValueError|bad|Line1\\nLine2\n"   # legacy 4-field (target)
         )
         rec = b.get_traceback("tb_old")
         assert rec is not None and rec["exception_type"] == "ValueError"
