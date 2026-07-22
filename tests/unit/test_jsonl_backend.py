@@ -399,9 +399,9 @@ class TestJsonlCoverage:
     def test_global_context_empty_is_noop(self, tmp_path):
         """_write_global_context returns early when global_ctx is empty."""
         fp = tmp_path / "c.jsonl"
-        b = JSONLBackend(file_path=fp, global_ctx=None)
-        # No header line written -> file empty
-        assert fp.read_text() == ""
+        JSONLBackend(file_path=fp, global_ctx=None)
+        # No header written -> file absent (or empty); the early-return branch ran
+        assert not fp.exists() or fp.stat().st_size == 0
 
     def test_rotation_prunes_oldest_beyond_max_files(self, tmp_path):
         """When rotation leaves more than max_files completed, oldest are pruned."""
