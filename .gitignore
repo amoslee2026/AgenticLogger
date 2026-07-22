@@ -43,9 +43,9 @@ temp/deleted/
 research_reports/
 
 # Coverage reports
-.coverage/
-htmlcov/
+.coverage
 .coverage.*
+htmlcov/
 
 # Tests
 tests/
