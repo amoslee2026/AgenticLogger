@@ -184,8 +184,14 @@ class AgentLogger:
 
     @property
     def file_path(self) -> Path:
-        """Absolute path to the current log file."""
-        return self._file_path
+        """Absolute path to the current (active) log file.
+
+        Delegates to the backend so the value stays correct after a JSONL
+        rotation — the backend reassigns its own ``file_path`` on rotate,
+        whereas the ``self._file_path`` captured at construction would go stale.
+        (@spec-ref: spec/05-storage.md — 评审修复: 旋转后 file_path 失效)
+        """
+        return self._backend.file_path
 
     # ------------------------------------------------------------------
     # Basic log methods
