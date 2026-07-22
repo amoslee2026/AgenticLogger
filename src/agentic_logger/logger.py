@@ -643,10 +643,26 @@ class AgentLogger:
             # (@spec-ref: spec/05-storage.md — 评审修复 S15)
             print(f"[agentic_logger] Write failed: {e}", file=sys.stderr)
 
+    def close(self) -> None:
+        """Close the underlying backend (e.g. commit/checkpoint SQLite).
+
+        Safe to call multiple times.  Registered via :mod:`atexit` so backend
+        resources are released even on unhandled exceptions.
+        (@spec-ref: spec/05-storage.md — 评审修复: SQLite 连接泄漏)
+        """
+        close = getattr(self._backend, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:
+                pass
+
     def _auto_run_end(self) -> None:
-        """``atexit`` hook: emit ``run_end`` if the run was never closed."""
+        """``atexit`` hook: emit ``run_end`` if the run was never closed, then
+        release backend resources (e.g. SQLite WAL checkpoint)."""
         if self._run_started and not self._run_ended:
             try:
                 self.run_end(msg="Process exited unexpectedly", exit_code=1)
             except Exception:
                 pass
+        self.close()
