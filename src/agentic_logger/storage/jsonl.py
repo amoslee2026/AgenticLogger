@@ -140,13 +140,16 @@ class JSONLBackend:
         }
         line = json.dumps(record, ensure_ascii=False) + "\n"
 
-        with open(tb_path, "a", encoding="utf-8") as f:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                f.write(line)
-                f.flush()
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        # threading.Lock serialises within-process writers; fcntl.flock
+        # serialises cross-process writers appending to the same sidecar.
+        with self._lock:
+            with open(tb_path, "a", encoding="utf-8") as f:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    f.write(line)
+                    f.flush()
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     def get_traceback(self, tid: str) -> dict | None:
         """Look up a traceback by its *tid*.
