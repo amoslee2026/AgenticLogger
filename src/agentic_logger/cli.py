@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import sys
 import time
