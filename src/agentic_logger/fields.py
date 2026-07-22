@@ -45,6 +45,7 @@ class AutoFields:
         self._rid = rid or uuid.uuid4().hex[:8]
         self._pid = str(os.getpid())
         self._seq = 0
+        self._lock = threading.Lock()
 
     @property
     def rid(self) -> str:
