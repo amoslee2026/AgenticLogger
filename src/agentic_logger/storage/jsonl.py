@@ -105,6 +105,16 @@ class JSONLBackend:
                 f.write("\n".join(lines) + "\n")
             self._write_count += len(entries)
 
+    def close(self) -> None:
+        """Release resources.
+
+        JSONLBackend writes per-call (no persistent file handle), so this is a
+        no-op kept for interface parity with :class:`SQLiteBackend`, allowing
+        :class:`~agentic_logger.logger.AgentLogger` to call ``close()``
+        polymorphically at shutdown.
+        """
+        return
+
     def save_traceback(
         self, tid: str, traceback_text: str, exc_type: str, exc_msg: str
     ) -> None:
