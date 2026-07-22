@@ -428,3 +428,12 @@ class TestCliRemaining:
         )
         assert cli_mod.cmd_tail(args) == 0
         assert "Stopped" in capsys.readouterr().err
+
+    def test_tail_json_output(self, tmp_path, capsys):
+        """tail --format json must emit JSON lines (cover the json-print branch)."""
+        from agentic_logger.cli import cmd_tail, build_parser
+        log_dir = tmp_path / "logs"
+        AgentLogger(program="t", command="c", log_dir=log_dir).info("hello")
+        args = build_parser().parse_args(["--log-dir", str(log_dir), "tail", "--format", "json"])
+        assert cmd_tail(args) == 0
+        assert "hello" in capsys.readouterr().out
