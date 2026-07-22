@@ -229,10 +229,10 @@ def cmd_tail(args: argparse.Namespace) -> int:
                     seen.clear()
                     seen.add(key)
 
-                # Apply filters
+                # Apply filters (module uses fnmatch glob, consistent with query)
                 if args.level and entry.get("level") != args.level:
                     continue
-                if args.module and args.module not in entry.get("module", ""):
+                if args.module and not fnmatch.fnmatch(entry.get("module", ""), args.module):
                     continue
                 if args.error_code and entry.get("error_code") != args.error_code:
                     continue
