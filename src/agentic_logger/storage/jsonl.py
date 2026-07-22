@@ -459,10 +459,14 @@ class JSONLBackend:
             if value is None:
                 continue
             if key == "min_dur":
-                if (entry.get("dur") or 0) < value:
+                # Entries without a dur are excluded from a dur range
+                # (``dur or 0`` previously conflated missing-dur with dur=0).
+                dur = entry.get("dur")
+                if dur is None or dur < value:
                     return False
             elif key == "max_dur":
-                if (entry.get("dur") or 0) > value:
+                dur = entry.get("dur")
+                if dur is None or dur > value:
                     return False
             elif key == "since":
                 # ISO 8601 string compare (valid when ts share the same tz offset —
