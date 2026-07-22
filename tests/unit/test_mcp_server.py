@@ -255,3 +255,55 @@ class TestDispatchTool:
         # Unknown kwarg would normally raise TypeError — must be caught.
         result = dispatch_tool(tmp_path, "agentic_log_query", {"bogus_kwarg": 1})
         assert "error" in result
+
+
+class TestHandleQueryFilters:
+    """Cover every handle_query filter branch + merge time-pruning."""
+
+    def test_all_filter_branches(self, populated_log_dir):
+        log_dir, rid, tid = populated_log_dir
+        # exercise op / path / choice / keyword / min_dur / max_dur / pid / tid branches
+        for kwargs in (
+            dict(op="write"), dict(path="/tmp/output.txt"), dict(choice="async"),
+            dict(keyword="Processing"), dict(min_dur=100), dict(max_dur=100000),
+            dict(pid=str(__import__("os").getpid())), dict(tid=tid),
+            dict(since="2000-01-01T00:00:00+00:00", until="2099-01-01T00:00:00+00:00"),
+        ):
+            res = handle_query(log_dir, **kwargs)
+            assert "logs" in res
+
+    def test_merge_time_pruning_skips_out_of_range(self, tmp_path):
+        # Two backends; one entirely before the since window must be pruned.
+        log_dir = tmp_path / "logs"
+        old = AgentLogger(program="old", command="r", log_dir=log_dir, storage="jsonl")
+        old.info("ancient", module="m")
+        new = AgentLogger(program="new", command="r", log_dir=log_dir, storage="jsonl")
+        new.info("recent", module="m")
+        # Query a far-future window -> prunes by max_ts < since
+        res = handle_query(log_dir, since="2099-01-01T00:00:00+00:00")
+        assert res["count"] == 0
+
+
+class TestHandleTraceFilters:
+    def test_trace_level_and_module_filters(self, populated_log_dir):
+        log_dir, rid, tid = populated_log_dir
+        r1 = handle_trace(log_dir, rid=rid, level="ERROR")
+        assert all(e["level"] == "ERROR" for e in r1["trace"])
+        r2 = handle_trace(log_dir, rid=rid, module="agent.parser")
+        assert r2["entry_count"] >= 1
+
+
+class TestLoadBackendsRobustness:
+    def test_corrupt_sqlite_is_skipped(self, tmp_path):
+        """A non-SQLite .sqlite file must be skipped, not crash the loader."""
+        from agentic_logger.mcp_server import _load_all_backends
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        (log_dir / "bad.sqlite").write_text("not a sqlite db")
+        (log_dir / "good.jsonl").write_text(
+            '{"ts":"2026-01-01T00:00:00+00:00","level":"INFO","msg":"ok",'
+            '"module":"m","rid":"r","pid":"1","seq":1}\n'
+        )
+        backends = _load_all_backends(log_dir)
+        # good.jsonl loaded; bad.sqlite skipped
+        assert any(b.file_path.name == "good.jsonl" for b in backends)
