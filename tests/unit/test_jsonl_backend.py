@@ -35,9 +35,9 @@ class TestWriteRead:
     def test_write_single(self, backend, jsonl_file):
         backend.write(_entry(msg="hello"))
         with open(jsonl_file) as f:
-            lines = [l for l in f if l.strip()]
+            lines = [ln for ln in f if ln.strip()]
         # First line is GLOBAL_CTX (empty since no global_ctx), second is entry
-        entries = [json.loads(l) for l in lines]
+        entries = [json.loads(ln) for ln in lines]
         data_entries = [e for e in entries if e["level"] != "__GLOBAL_CTX__"]
         assert len(data_entries) == 1
         assert data_entries[0]["msg"] == "hello"
