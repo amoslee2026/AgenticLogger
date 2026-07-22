@@ -238,3 +238,94 @@ class TestSQLiteBackend:
         assert res[0]["msg"] == "fail"
 
         backend.close()
+
+
+class TestSQLiteCoverage:
+    """Cover query filters, batch, cleanup, row conversion edge cases."""
+
+    def _full(self, backend):
+        """Write one of each entry type for filter coverage."""
+        from agentic_logger import ErrorCode
+        base = {"rid": "r1", "pid": "1"}
+        backend.write({**base, "ts": "2026-07-21T01:00:00.000+00:00", "level": "INFO",
+                       "msg": "i", "module": "agent.parser", "seq": 1, "dur": 10})
+        backend.write({**base, "ts": "2026-07-21T02:00:00.000+00:00", "level": "ERROR",
+                       "msg": "e", "module": "agent.db", "seq": 2, "error_code": "IO_NOT_FOUND"})
+        backend.write({**base, "ts": "2026-07-21T03:00:00.000+00:00", "level": "TOOL",
+                       "msg": "t", "module": "m", "seq": 3, "tool": "bash", "cmd": "ls",
+                       "exit": 0, "dur": 5, "stdout": "o", "stderr": "s"})
+        backend.write({**base, "ts": "2026-07-21T04:00:00.000+00:00", "level": "FILE_OP",
+                       "msg": "f", "module": "m", "seq": 4, "op": "write", "path": "/p",
+                       "ok": True, "size": 9})
+        backend.write({**base, "ts": "2026-07-21T05:00:00.000+00:00", "level": "DECISION",
+                       "msg": "d", "module": "m", "seq": 5, "choice": "async",
+                       "alts": ["sync"], "reason": "io", "confidence": 0.8})
+        backend.write({**base, "ts": "2026-07-21T06:00:00.000+00:00", "level": "CODE_GEN",
+                       "msg": "c", "module": "m", "seq": 6, "lang": "python", "path": "/x.py",
+                       "lines": 5, "funcs": ["main"], "imports": ["os"]})
+        backend.write({**base, "ts": "2026-07-21T07:00:00.000+00:00", "level": "CONTEXT",
+                       "msg": "ctx", "module": "m", "seq": 7, "from_task": "a", "to_task": "b"})
+        backend.write({**base, "ts": "2026-07-21T08:00:00.000+00:00", "level": "INFO",
+                       "msg": "lifecycle", "module": "__lifecycle__", "seq": 8,
+                       "event": "run_end", "exit_code": 0})
+
+    def test_write_batch(self, tmp_path):
+        b = SQLiteBackend(tmp_path / "b.sqlite")
+        entries = [{"ts": f"2026-01-01T00:00:0{i}Z", "level": "INFO", "msg": f"m{i}",
+                    "rid": "r", "pid": "1", "seq": i} for i in range(5)]
+        b.write_batch(entries)
+        assert b.count() == 5
+        b.close()
+
+    def test_query_all_filters(self, tmp_path):
+        b = SQLiteBackend(tmp_path / "b.sqlite")
+        self._full(b)
+        assert len(b.query(module="agent.*")) >= 1          # module glob
+        assert len(b.query(op="write")) == 1                 # op
+        assert len(b.query(path="/p")) == 1                  # path
+        assert len(b.query(choice="async")) == 1             # choice
+        assert len(b.query(since="2026-07-21T05:00:00.000+00:00")) >= 4  # since
+        assert len(b.query(until="2026-07-21T03:00:00.000+00:00")) >= 3  # until
+        assert len(b.query(keyword="async")) >= 1            # keyword
+        assert len(b.query(min_dur=5)) >= 1                  # min_dur
+        assert len(b.query(max_dur=5)) >= 1                  # max_dur
+        assert len(b.query(pid="1")) == 8                    # pid
+        b.close()
+
+    def test_get_traceback_none_and_count(self, tmp_path):
+        b = SQLiteBackend(tmp_path / "b.sqlite")
+        assert b.get_traceback("missing") is None
+        self._full(b)
+        assert b.count() == 8
+        assert b.get_time_range() is not None
+        b.close()
+
+    def test_cleanup_time_and_size_and_orphans(self, tmp_path):
+        # Force time-based + size-based cleanup via tiny limits.
+        b = SQLiteBackend(tmp_path / "c.sqlite", circular=True, max_size_mb=1,
+                          retention_hours=0)
+        # retention_hours=0 → cutoff ~now → all old ts get deleted by time branch
+        from datetime import datetime, timezone
+        for i in range(150):  # > 100 writes triggers cleanup
+            b.write({"ts": "2020-01-01T00:00:00.000+00:00", "level": "INFO",
+                     "msg": f"m{i}", "rid": "r", "pid": "1", "seq": i})
+        # Insert an orphan traceback (no matching log) to exercise orphan cleanup
+        b.conn.execute("INSERT OR REPLACE INTO tracebacks (tid,traceback) VALUES (?,?)",
+                       ("tb_orphan", "x"))
+        b.conn.commit()
+        b._cleanup_if_needed()
+        b.close()
+
+    def test_row_to_dict_malformed_json(self, tmp_path):
+        """Malformed ctx/alts/funcs/imports must not crash _row_to_dict."""
+        b = SQLiteBackend(tmp_path / "r.sqlite")
+        b.conn.execute(
+            "INSERT INTO logs (ts,level,msg,module,rid,pid,seq,ctx,alts,funcs,imports,exit_code) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("2026-01-01T00:00:00Z", "TOOL", "t", "m", "r", "1", 1,
+             "{bad", "{bad", "{bad", "{bad", 0),
+        )
+        b.conn.commit()
+        rows = b.query(level="TOOL")
+        assert len(rows) == 1
+        b.close()
