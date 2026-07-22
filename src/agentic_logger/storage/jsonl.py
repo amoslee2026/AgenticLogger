@@ -123,9 +123,17 @@ class JSONLBackend:
         tb_path = self._traceback_path()
         tb_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Escape newlines so one traceback == one line in the sidecar.
-        safe_tb = traceback_text.replace("\n", "\\n")
-        line = f"{tid}|{exc_type}|{exc_msg}|{safe_tb}\n"
+        # One JSON record per line — eliminates pipe/newline delimiter ambiguity
+        # so exc_msg or traceback containing ``|`` or newlines no longer corrupts
+        # the sidecar.
+        # (@spec-ref: spec/05-storage.md §6 — 评审修复: 管道分隔格式损坏)
+        record = {
+            "tid": tid,
+            "exception_type": exc_type,
+            "exception_msg": exc_msg,
+            "traceback": traceback_text,
+        }
+        line = json.dumps(record, ensure_ascii=False) + "\n"
 
         with open(tb_path, "a", encoding="utf-8") as f:
             try:
@@ -138,21 +146,44 @@ class JSONLBackend:
     def get_traceback(self, tid: str) -> dict | None:
         """Look up a traceback by its *tid*.
 
-        Returns ``None`` if no matching record exists.
+        Returns ``None`` if no matching record exists.  Reads the current JSONL
+        sidecar format and falls back to the legacy pipe-delimited format for
+        sidecars written by older versions.
         """
         tb_path = self._traceback_path()
         if not tb_path.exists():
             return None
         with open(tb_path, "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split("|", 3)
-                if len(parts) == 4 and parts[0] == tid:
-                    return {
-                        "tid": parts[0],
-                        "exception_type": parts[1],
-                        "exception_msg": parts[2],
-                        "traceback": parts[3].replace("\\n", "\n"),
-                    }
+                line = line.strip()
+                if not line:
+                    continue
+                rec = self._parse_tb_line(line)
+                if rec is not None and rec.get("tid") == tid:
+                    return rec
+        return None
+
+    @staticmethod
+    def _parse_tb_line(line: str) -> dict | None:
+        """Parse one traceback sidecar line.
+
+        Current format is JSONL (one JSON object per line).  Legacy
+        pipe-delimited ``tid|exc_type|exc_msg|tb`` lines are still recognised
+        for sidecars written before the JSONL migration.
+        """
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                return None
+        parts = line.split("|", 3)
+        if len(parts) == 4:
+            return {
+                "tid": parts[0],
+                "exception_type": parts[1],
+                "exception_msg": parts[2],
+                "traceback": parts[3].replace("\\n", "\n"),
+            }
         return None
 
     # ------------------------------------------------------------------
