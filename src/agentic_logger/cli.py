@@ -212,16 +212,21 @@ def cmd_tail(args: argparse.Namespace) -> int:
     latest = max(backends, key=lambda b: b.file_path.stat().st_mtime)
     print(f"Tailing: {latest.file_path}", file=sys.stderr)
 
-    seen_ts: set[str] = set()
+    # Dedup by (ts, seq) — ts-only dedup dropped entries sharing a millisecond.
+    # Bounded to avoid unbounded growth across long --follow sessions.
+    seen: set[tuple] = set()
     try:
         while True:
             # Read new entries
             entries = latest.query(limit=100, order_by="ts_asc")
             for entry in entries:
-                ts = entry.get("ts", "")
-                if ts in seen_ts:
+                key = (entry.get("ts"), entry.get("seq"))
+                if key in seen:
                     continue
-                seen_ts.add(ts)
+                seen.add(key)
+                if len(seen) > 100_000:
+                    seen.clear()
+                    seen.add(key)
 
                 # Apply filters
                 if args.level and entry.get("level") != args.level:
@@ -234,6 +239,7 @@ def cmd_tail(args: argparse.Namespace) -> int:
                 if args.format == "json":
                     print(json.dumps(entry, ensure_ascii=False, default=str), flush=True)
                 else:
+                    ts = entry.get("ts", "")
                     ts_short = ts[11:23] if len(ts) > 23 else ts
                     level = entry.get("level", "?")
                     module = entry.get("module", "?")
