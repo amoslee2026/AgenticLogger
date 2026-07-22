@@ -411,6 +411,15 @@ class JSONLBackend:
             elif key == "max_dur":
                 if (entry.get("dur") or 0) > value:
                     return False
+            elif key == "since":
+                # ISO 8601 string compare (valid when ts share the same tz offset —
+                # enforced by UTC everywhere, see P1 timezone fix).
+                # (@spec-ref: spec/04-read-interface.md — 评审修复: since/until 原被静默忽略)
+                if entry.get("ts", "") < str(value):
+                    return False
+            elif key == "until":
+                if entry.get("ts", "") > str(value):
+                    return False
             elif key == "module" and "*" in str(value):
                 import fnmatch
                 if not fnmatch.fnmatch(entry.get("module", ""), value):
