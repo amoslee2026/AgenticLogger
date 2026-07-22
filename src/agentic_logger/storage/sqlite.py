@@ -311,6 +311,15 @@ class SQLiteBackend:
                     conditions.append(f"{field} = ?")
                     params.append(value)
 
+        # exit_code: API exposes "exit_code", JSONL entry uses "exit", column is "exit_code".
+        # (@spec-ref: spec/04-read-interface.md — 评审修复: exit_code 过滤器原被静默丢弃)
+        exit_val = filters.get("exit_code")
+        if exit_val is None:
+            exit_val = filters.get("exit")
+        if exit_val is not None:
+            conditions.append("exit_code = ?")
+            params.append(exit_val)
+
         # Range fields
         min_dur = filters.get("min_dur")
         if min_dur is not None:
