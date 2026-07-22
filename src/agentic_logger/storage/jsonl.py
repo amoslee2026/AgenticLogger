@@ -288,8 +288,12 @@ class JSONLBackend:
                     tb_file.unlink()
                 files = sorted(self._get_completed_files())
 
-            # Step 4: finalise the renamed file
-            final_path = rotating_path.with_suffix(".jsonl")
+            # Step 4: finalise the renamed file.
+            # Strip the ``.rotating`` marker (NOT replace with ``.jsonl`` — that
+            # yields a double extension ``x.jsonl.jsonl`` and breaks traceback
+            # sidecar lookup).  ``with_suffix("")`` restores the original name.
+            # (@spec-ref: spec/05-storage.md §5.1 — 评审修复: 双扩展名 bug)
+            final_path = rotating_path.with_suffix("")
             rotating_path.rename(final_path)
 
         except OSError as e:
