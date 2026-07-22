@@ -452,19 +452,7 @@ def create_server(log_dir: str | Path = "./logs"):
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-        if name == "agentic_log_query":
-            result = handle_query(log_path, **arguments)
-        elif name == "agentic_log_trace":
-            result = handle_trace(log_path, **arguments)
-        elif name == "agentic_log_stats":
-            result = handle_stats(log_path, **arguments)
-        elif name == "agentic_log_traceback":
-            result = handle_traceback(log_path, **arguments)
-            if result is None:
-                result = {"error": f"Traceback not found: {arguments.get('tid')}"}
-        else:
-            result = {"error": f"Unknown tool: {name}"}
-
+        result = dispatch_tool(log_path, name, arguments)
         return [TextContent(
             type="text",
             text=json.dumps(result, ensure_ascii=False, indent=2, default=str),
