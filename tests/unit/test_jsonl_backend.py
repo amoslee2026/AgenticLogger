@@ -375,9 +375,11 @@ class TestJsonlCoverage:
         fp = tmp_path / "c.jsonl"
         b = JSONLBackend(file_path=fp)
         tb = fp.with_suffix(".tracebacks")
-        tb.write_text('tb_old|ValueError|bad|Line1\\nLine2\n')      # legacy 4-field
-        tb.write('{broken json\n', )  # type: ignore  # malformed JSON line
-        tb.write('short|two\n', )  # type: ignore      # <4 fields
+        tb.write_text(
+            "tb_old|ValueError|bad|Line1\\nLine2\n"   # legacy 4-field
+            "{broken json\n"                            # malformed JSON line
+            "short|two\n"                               # <4 fields
+        )
         rec = b.get_traceback("tb_old")
         assert rec is not None and rec["exception_type"] == "ValueError"
         assert rec["traceback"] == "Line1\nLine2"
