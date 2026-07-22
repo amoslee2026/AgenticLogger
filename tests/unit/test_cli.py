@@ -402,3 +402,29 @@ class TestCliRemaining:
              "--error-code", "IO_NOT_FOUND"]
         )
         assert cmd_tail(args) == 0
+
+    def test_tail_error_code_filter(self, tmp_path, capsys):
+        """Exercise tail's error_code filter line."""
+        from agentic_logger.cli import cmd_tail, build_parser
+        log_dir = tmp_path / "logs"
+        logger = AgentLogger(program="t", command="c", log_dir=log_dir)
+        logger.error("boom", error_code=ErrorCode.IO_NOT_FOUND)
+        args = build_parser().parse_args(
+            ["--log-dir", str(log_dir), "tail", "--error-code", "IO_NOT_FOUND"]
+        )
+        assert cmd_tail(args) == 0
+
+    def test_tail_follow_interrupt(self, tmp_path, capsys, monkeypatch):
+        """--follow + KeyboardInterrupt must print 'Stopped' and return 0."""
+        import agentic_logger.cli as cli_mod
+        log_dir = tmp_path / "logs"
+        AgentLogger(program="t", command="c", log_dir=log_dir).info("x")
+
+        def boom(_seconds):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(cli_mod.time, "sleep", boom)
+        args = cli_mod.build_parser().parse_args(
+            ["--log-dir", str(log_dir), "tail", "--follow"]
+        )
+        assert cli_mod.cmd_tail(args) == 0
+        assert "Stopped" in capsys.readouterr().err
