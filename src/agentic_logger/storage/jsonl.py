@@ -312,14 +312,16 @@ class JSONLBackend:
         4. **Finalise** by renaming the ``*.rotating`` file back to
            ``*.jsonl`` (without the ``.rotating`` marker).
         """
-        rotating_path = self.file_path.with_suffix(".jsonl.rotating")
+        original_path = self.file_path
+        rotating_path = original_path.with_suffix(".jsonl.rotating")
 
         # Step 1: rename → .rotating
         try:
-            self.file_path.rename(rotating_path)
+            original_path.rename(rotating_path)
         except FileNotFoundError:
             return  # Someone else rotated concurrently; nothing to do.
 
+        new_path = None
         try:
             # Step 2: create new file (validates write permission, disk space)
             new_path = self._generate_next_filename()
@@ -346,10 +348,16 @@ class JSONLBackend:
             rotating_path.rename(final_path)
 
         except OSError as e:
-            # Rollback: the new file could not be created, so restore
-            # the original to avoid losing in-flight log data.
+            # Rollback: remove the orphan new file, restore ``file_path`` and
+            # the original file to its pre-rotation location/name.  The old
+            # rollback renamed rotating onto the (already-reassigned) new_path,
+            # leaving an orphan and losing the original filename.
+            # (@spec-ref: spec/05-storage.md §5.1 — 评审修复: 回滚留孤儿文件)
+            if new_path is not None and new_path.exists():
+                new_path.unlink(missing_ok=True)
+            self.file_path = original_path
             if rotating_path.exists():
-                rotating_path.rename(self.file_path)
+                rotating_path.rename(original_path)
             raise RuntimeError(
                 f"Rotation failed, original file restored: {e}"
             ) from e
