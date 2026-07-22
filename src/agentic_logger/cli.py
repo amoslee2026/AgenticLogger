@@ -33,20 +33,31 @@ from agentic_logger.mcp_server import (
 
 
 def _parse_since(since: str | None) -> str | None:
-    """Convert relative time (e.g. '1h', '24h', '7d') to ISO 8601."""
+    """Convert relative time (e.g. '1h', '24h', '7d') to ISO 8601.
+
+    Raises ``ValueError`` on ambiguous input (bare number, unknown unit,
+    fractional value) instead of silently producing a wrong time window.
+    (@spec-ref: spec/04-read-interface.md §3 — 评审修复: _parse_since 静默错误)
+    """
     if not since:
         return None
     # Already ISO 8601?
     if "T" in since:
         return since
-    # Relative time
+    # Relative time: <integer><unit>
     units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    if len(since) < 2 or since[-1] not in units:
+        raise ValueError(
+            f"invalid time value {since!r}: expected <N><unit> "
+            f"(e.g. 1h, 24h, 7d; units: {sorted(units)}) or an ISO 8601 timestamp"
+        )
     try:
         value = int(since[:-1])
-        unit = since[-1]
-    except (ValueError, IndexError):
-        return since
-    seconds = value * units.get(unit, 1)
+    except ValueError as e:
+        raise ValueError(
+            f"invalid time value {since!r}: <N> must be an integer"
+        ) from e
+    seconds = value * units[since[-1]]
     dt = datetime.now(timezone.utc) - timedelta(seconds=seconds)
     return dt.isoformat(timespec="milliseconds")
 
