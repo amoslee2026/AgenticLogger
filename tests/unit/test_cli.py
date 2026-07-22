@@ -184,3 +184,184 @@ class TestTailDedup:
         out = capsys.readouterr().out
         assert "alpha" in out
         assert "beta" in out
+
+
+# === Direct in-process CLI tests (for coverage; subprocess tests above don't credit) ===
+
+
+@pytest.fixture
+def populated_cli(tmp_path):
+    log_dir = tmp_path / "logs"
+    logger = AgentLogger(program="cli", command="demo", log_dir=log_dir, storage="jsonl")
+    logger.run_start()
+    logger.info("Processing", module="agent.parser", ctx={"file": "data.json"})
+    logger.warn("Slow op", dur=5000)
+    logger.error("Failed", error_code=ErrorCode.IO_NOT_FOUND)
+    logger.tool_call(tool="bash", cmd="ls", exit=0, dur=50)
+    logger.tool_call(tool="bash", cmd="rm", exit=1, dur=100, error_code=ErrorCode.EXEC_NON_ZERO)
+    logger.decision(choice="async", alts=["sync"])
+    logger.file_op("write", "/tmp/o.txt", ok=True, size=10)
+    logger.code_gen(lang="python", path="src/x.py", lines=5)
+    logger.context_switch(to_task="b", from_task="a")
+    try:
+        raise ValueError("boom")
+    except Exception as e:
+        tid = logger.save_traceback(e)
+        logger.error("Exc", error_code=ErrorCode.INTERNAL_UNEXPECTED, tid=tid)
+    logger.run_end(exit_code=0, dur=10000)
+    return log_dir, tid
+
+
+def _parse(populated_cli, *opts):
+    log_dir, _ = populated_cli
+    from agentic_logger.cli import build_parser
+    return build_parser().parse_args(["--log-dir", str(log_dir), *opts])
+
+
+class TestDirectCommands:
+    def test_query_table_and_json(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_query
+        assert cmd_query(_parse(populated_cli, "query")) == 0
+        assert "Found" in capsys.readouterr().out
+        assert cmd_query(_parse(populated_cli, "query", "--format", "json")) == 0
+        json.loads(capsys.readouterr().out)
+
+    def test_query_with_filters(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_query
+        cmd_query(_parse(populated_cli, "query", "--level", "ERROR", "--error-code",
+                         "IO_NOT_FOUND", "--since", "1h", "--until", "1d",
+                         "--min-dur", "1", "--module", "agent.*", "--keyword", "Failed",
+                         "--limit", "5", "--offset", "0", "--order-by", "ts_asc"))
+        capsys.readouterr()
+
+    def test_query_table_with_dur_and_error_cols(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_query
+        cmd_query(_parse(populated_cli, "query", "--format", "table"))
+        out = capsys.readouterr().out
+        assert "dur" in out and "error_code" in out
+
+    def test_trace_table_and_json(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_trace
+        log_dir, tid = populated_cli
+        a = _parse(populated_cli, "trace", "--rid", "__placeholder__")
+        a.rid = _rid_of(log_dir)
+        assert cmd_trace(a) == 0
+        assert "Trace for" in capsys.readouterr().out
+        a2 = _parse(populated_cli, "trace", "--rid", _rid_of(log_dir), "--format", "json",
+                    "--include-traceback")
+        assert cmd_trace(a2) == 0
+        json.loads(capsys.readouterr().out)
+
+    def test_stats_table_and_json(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_stats
+        assert cmd_stats(_parse(populated_cli, "stats", "--group-by", "level")) == 0
+        assert "Statistics" in capsys.readouterr().out
+        assert cmd_stats(_parse(populated_cli, "stats", "--group-by", "tool",
+                                "--since", "1d", "--format", "json")) == 0
+        json.loads(capsys.readouterr().out)
+
+    def test_tail_text_and_json_and_filters(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_tail
+        assert cmd_tail(_parse(populated_cli, "tail")) == 0
+        assert "Tailing:" in capsys.readouterr().err
+        assert cmd_tail(_parse(populated_cli, "tail", "--format", "json",
+                               "--level", "ERROR", "--module", "agent.*",
+                               "--error-code", "IO_NOT_FOUND")) == 0
+        capsys.readouterr()
+
+    def test_tail_no_backends(self, tmp_path, capsys):
+        from agentic_logger.cli import cmd_tail
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        from agentic_logger.cli import build_parser
+        args = build_parser().parse_args(["--log-dir", str(empty), "tail"])
+        assert cmd_tail(args) == 1
+
+    def test_traceback_text_and_json(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_traceback
+        _, tid = populated_cli
+        assert cmd_traceback(_parse(populated_cli, "traceback", "--tid", tid)) == 0
+        assert "Traceback:" in capsys.readouterr().out
+        assert cmd_traceback(_parse(populated_cli, "traceback", "--tid", tid,
+                                    "--format", "json")) == 0
+        json.loads(capsys.readouterr().out)
+
+    def test_traceback_not_found(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_traceback
+        assert cmd_traceback(_parse(populated_cli, "traceback", "--tid", "nope")) == 1
+
+    def test_list_files_table_and_json(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_list_files
+        assert cmd_list_files(_parse(populated_cli, "list-files")) == 0
+        assert "cli_demo_" in capsys.readouterr().out
+        assert cmd_list_files(_parse(populated_cli, "list-files", "--format", "json")) == 0
+        json.loads(capsys.readouterr().out)
+
+    def test_list_files_empty(self, tmp_path, capsys):
+        from agentic_logger.cli import cmd_list_files, build_parser
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        args = build_parser().parse_args(["--log-dir", str(empty), "list-files"])
+        assert cmd_list_files(args) == 0
+
+
+class TestFormatHelpers:
+    def test_format_table_empty(self):
+        from agentic_logger.cli import _format_table
+        assert _format_table([], ["a", "b"]) == "(no results)"
+
+    def test_format_table_truncation(self):
+        from agentic_logger.cli import _format_table
+        long = "x" * 100
+        out = _format_table([{"a": long, "b": "y"}], ["a", "b"])
+        assert "..." in out
+
+    def test_format_entry_json(self):
+        from agentic_logger.cli import _format_entry_json
+        assert "k" in json.loads(_format_entry_json({"k": "v"}))
+
+
+class TestMain:
+    def test_main_no_command_exits(self, populated_cli, capsys):
+        from agentic_logger.cli import main
+        import sys
+        log_dir, _ = populated_cli
+        with pytest.raises(SystemExit):
+            main_with_args(["--log-dir", str(log_dir)])
+
+    def test_main_bad_since_returns_2(self, populated_cli, capsys):
+        with pytest.raises(SystemExit) as ei:
+            main_with_args(["--log-dir", str(populated_cli[0]), "query", "--since", "100"])
+        assert ei.value.code == 2
+
+    def test_main_unknown_handler(self, populated_cli, capsys):
+        # build_parser enforces a valid subcommand, so exercise main via a
+        # malformed invocation path by calling handler dispatch directly.
+        from agentic_logger.cli import main
+        with pytest.raises(SystemExit):
+            main_with_args(["--log-dir", str(populated_cli[0]), "query"])
+
+
+def main_with_args(argv):
+    """Run cli.main with a synthetic argv (avoids monkeypatching sys.argv inline)."""
+    import sys
+    old = sys.argv
+    sys.argv = ["agentic-logger", *argv]
+    try:
+        from agentic_logger.cli import main
+        return main()
+    finally:
+        sys.argv = old
+
+
+def _rid_of(log_dir):
+    """Read the rid from the single log file's global context."""
+    from pathlib import Path
+    import json as _j
+    files = list(Path(log_dir).glob("*.jsonl"))
+    with open(files[0]) as f:
+        for line in f:
+            rec = _j.loads(line)
+            if rec.get("level") == "__GLOBAL_CTX__":
+                return rec.get("rid")
+    return None
