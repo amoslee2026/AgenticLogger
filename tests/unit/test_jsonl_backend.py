@@ -425,3 +425,18 @@ class TestJsonlCoverage:
         (tmp_path / "rot_main_20260721_100000000001.jsonl.rotating").write_text("stale")
         JSONLBackend(file_path=fp)  # recovery discards the stale .rotating
         assert not (tmp_path / "rot_main_20260721_100000000001.jsonl.rotating").exists()
+
+
+class TestJsonlRemaining:
+    def test_query_skips_blank_and_corrupt_lines(self, tmp_path):
+        """Blank lines (continue) and corrupt JSON (skip) must not crash query."""
+        fp = tmp_path / "c.jsonl"
+        fp.write_text(
+            "\n"   # blank line -> continue
+            "{not json\n"   # corrupt -> skip
+            '{"ts":"2026-01-01T00:00:00+00:00","level":"INFO","msg":"ok",'
+            '"module":"m","rid":"r","pid":"1","seq":1}\n'
+        )
+        b = JSONLBackend(file_path=fp)
+        results = b.query()
+        assert any(r.get("msg") == "ok" for r in results)

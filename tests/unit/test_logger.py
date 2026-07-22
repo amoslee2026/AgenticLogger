@@ -563,3 +563,27 @@ class TestGenerateFilename:
         lg = AgentLogger(program="fn", command="c", log_dir=tmp_path)
         name = lg.file_path.name
         assert name.startswith("fn_c_") and name.endswith(".jsonl")
+
+
+class TestLoggerRemaining:
+    def test_code_gen(self, tmp_path):
+        lg = AgentLogger(program="cg", command="c", log_dir=tmp_path)
+        lg.code_gen(lang="python", path="x.py", lines=10, funcs=["f"], imports=["os"])
+        entries = _read_entries(lg.file_path)
+        assert any(e.get("level") == "CODE_GEN" and e["path"] == "x.py" for e in entries)
+
+    def test_close_swallows_backend_close_error(self, tmp_path):
+        """close() must not propagate a backend.close() failure."""
+        lg = AgentLogger(program="ce", command="c", log_dir=tmp_path)
+
+        class BadClose:
+            file_path = lg.file_path
+
+            def write(self, entry):
+                pass
+
+            def close(self):
+                raise OSError("nope")
+
+        lg._backend = BadClose()
+        lg.close()  # must not raise

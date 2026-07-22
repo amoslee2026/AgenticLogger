@@ -365,3 +365,27 @@ def _rid_of(log_dir):
             if rec.get("level") == "__GLOBAL_CTX__":
                 return rec.get("rid")
     return None
+
+
+class TestCliRemaining:
+    def test_trace_table_include_traceback(self, populated_cli, capsys):
+        from agentic_logger.cli import cmd_trace
+        log_dir, tid = populated_cli
+        a = _parse(populated_cli, "trace", "--rid", _rid_of(log_dir), "--include-traceback")
+        assert cmd_trace(a) == 0
+        assert "tid" in capsys.readouterr().out
+
+    def test_tail_skips_exact_duplicate_key(self, tmp_path, capsys):
+        """Identical (ts, seq) entries: second is skipped via the seen-continue."""
+        from agentic_logger.cli import cmd_tail, build_parser
+        log_dir = tmp_path / "logs"
+        logger = AgentLogger(program="t", command="c", log_dir=log_dir)
+        b = logger._backend
+        line = ("{\"ts\":\"2026-07-21T10:00:00.000+00:00\",\"level\":\"INFO\","
+                "\"msg\":\"dup\",\"module\":\"m\",\"rid\":\"r\",\"pid\":\"1\",\"seq\":1}\n")
+        with open(b.file_path, "a") as f:
+            f.write(line * 2)  # two identical lines -> same (ts, seq) key
+        args = build_parser().parse_args(["--log-dir", str(log_dir), "tail"])
+        cmd_tail(args)
+        out = capsys.readouterr().out
+        assert out.count("dup") == 1
