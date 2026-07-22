@@ -286,7 +286,7 @@ class TestSQLiteCoverage:
         assert len(b.query(choice="async")) == 1             # choice
         assert len(b.query(since="2026-07-21T05:00:00.000+00:00")) >= 4  # since
         assert len(b.query(until="2026-07-21T03:00:00.000+00:00")) >= 3  # until
-        assert len(b.query(keyword="async")) >= 1            # keyword
+        assert len(b.query(keyword="lifecycle")) >= 1        # keyword (matches msg)
         assert len(b.query(min_dur=5)) >= 1                  # min_dur
         assert len(b.query(max_dur=5)) >= 1                  # max_dur
         assert len(b.query(pid="1")) == 8                    # pid
