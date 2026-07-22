@@ -132,7 +132,6 @@ def handle_query(
     limit: int = 100,
     offset: int = 0,
     order_by: str = "ts_desc",
-    file_pattern: str | None = None,
 ) -> dict:
     """``agentic_log_query`` — multi-field filtered log search.
 
