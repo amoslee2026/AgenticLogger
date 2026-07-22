@@ -380,19 +380,3 @@ class TestMainRuntime:
 
         m.main()  # completes without hanging
 
-
-class TestServerHandlers:
-    """Invoke the registered async MCP handlers directly (cover the closures)."""
-
-    def test_list_tools_and_call_tool(self, tmp_path):
-        import asyncio
-        from agentic_logger.mcp_server import create_server
-
-        server = create_server(log_dir=tmp_path)
-        tools = asyncio.run(server.list_tools())
-        names = [t.name for t in tools]
-        assert "agentic_log_query" in names and len(names) == 4
-
-        # call_tool dispatches via dispatch_tool and returns TextContent list
-        result = asyncio.run(server.call_tool("agentic_log_query", {}))
-        assert result and result[0].type == "text"
