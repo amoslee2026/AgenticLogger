@@ -258,7 +258,6 @@ def handle_stats(
     until: str | None = None,
     group_by: str = "level",
     rid: str | None = None,
-    file_pattern: str | None = None,
 ) -> dict:
     """``agentic_log_stats`` — aggregated statistics by group key.
 
