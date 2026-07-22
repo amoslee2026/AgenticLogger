@@ -332,3 +332,12 @@ class TestSQLiteCoverage:
         b = SQLiteBackend(tmp_path / "empty.sqlite")
         assert b.get_time_range() is None
         b.close()
+
+    def test_wal_checkpoint_every_1000_writes(self, tmp_path):
+        """Writing >= checkpoint_every entries triggers a PASSIVE checkpoint."""
+        b = SQLiteBackend(tmp_path / "cp.sqlite", checkpoint_every=10)  # small for speed
+        for i in range(25):
+            b.write({"ts": f"2026-01-01T00:00:{i:02d}Z", "level": "INFO",
+                     "msg": f"m{i}", "rid": "r", "pid": "1", "seq": i})
+        assert b.count() == 25
+        b.close()
