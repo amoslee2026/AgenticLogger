@@ -397,7 +397,12 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    sys.exit(handler(args))
+    try:
+        sys.exit(handler(args))
+    except ValueError as e:
+        # e.g. invalid --since/--until value from _parse_since
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":
