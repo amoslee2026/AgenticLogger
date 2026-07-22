@@ -307,3 +307,75 @@ class TestLoadBackendsRobustness:
         backends = _load_all_backends(log_dir)
         # good.jsonl loaded; bad.sqlite skipped
         assert any(b.file_path.name == "good.jsonl" for b in backends)
+
+
+class TestDispatchAllBranches:
+    """Cover every dispatch_tool branch (trace / stats / traceback found+miss / generic exc)."""
+
+    def test_dispatch_trace(self, populated_log_dir):
+        from agentic_logger.mcp_server import dispatch_tool
+        log_dir, rid, tid = populated_log_dir
+        r = dispatch_tool(log_dir, "agentic_log_trace", {"rid": rid})
+        assert "trace" in r
+
+    def test_dispatch_stats(self, populated_log_dir):
+        from agentic_logger.mcp_server import dispatch_tool
+        r = dispatch_tool(populated_log_dir[0], "agentic_log_stats", {"group_by": "level"})
+        assert "groups" in r
+
+    def test_dispatch_traceback_found(self, populated_log_dir):
+        from agentic_logger.mcp_server import dispatch_tool
+        _, _, tid = populated_log_dir
+        r = dispatch_tool(populated_log_dir[0], "agentic_log_traceback", {"tid": tid})
+        assert "traceback" in r
+
+    def test_dispatch_traceback_not_found(self, populated_log_dir):
+        from agentic_logger.mcp_server import dispatch_tool
+        r = dispatch_tool(populated_log_dir[0], "agentic_log_traceback", {"tid": "nope"})
+        assert "error" in r
+
+    def test_dispatch_generic_exception(self, tmp_path, monkeypatch):
+        """A non-TypeError backend error must hit the generic except branch."""
+        import agentic_logger.mcp_server as m
+        from agentic_logger.mcp_server import dispatch_tool
+
+        def boom(*a, **k):
+            raise RuntimeError("kaboom")
+        monkeypatch.setattr(m, "handle_query", boom)
+        r = dispatch_tool(tmp_path, "agentic_log_query", {})
+        assert "error" in r and "RuntimeError" in r["error"]
+
+
+class TestHandleStatsEdge:
+    def test_stats_unknown_group_key(self, populated_log_dir):
+        """group_by on a field most entries lack still returns a valid result."""
+        r = handle_stats(populated_log_dir[0], group_by="nonexistent_field")
+        assert r["total"] >= 1
+        assert any(g["key"] == "unknown" for g in r["groups"])
+
+
+class TestMainRuntime:
+    def test_main_with_mocked_stdio(self, tmp_path, monkeypatch):
+        """main() must drive create_server + run() without actually serving."""
+        import sys
+        import mcp.server.stdio as stdio_mod
+        import mcp.server as srv_mod
+        import agentic_logger.mcp_server as m
+
+        monkeypatch.setattr(sys, "argv", ["mcp", "--log-dir", str(tmp_path)])
+
+        class _Ctx:
+            async def __aenter__(self):
+                return (object(), object())
+            async def __aexit__(self, *a):
+                return False
+
+        async def fake_stdio():
+            return _Ctx()
+        monkeypatch.setattr(stdio_mod, "stdio_server", fake_stdio)
+
+        async def fake_run(self, *a, **k):
+            return None
+        monkeypatch.setattr(srv_mod.Server, "run", fake_run)
+
+        m.main()  # completes without hanging
