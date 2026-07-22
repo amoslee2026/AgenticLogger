@@ -68,7 +68,9 @@ class AutoFields:
         @spec-invariant: Does NOT validate field types — assumes caller provides correct types.
         @last-changed: 2026-07-21
         """
-        self._seq += 1
+        with self._lock:
+            self._seq += 1
+            seq = self._seq
 
         if "ts" not in entry:
             entry["ts"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
@@ -77,7 +79,7 @@ class AutoFields:
         if "rid" not in entry:
             entry["rid"] = self._rid
         if "seq" not in entry:
-            entry["seq"] = self._seq
+            entry["seq"] = seq
 
         return entry
 
