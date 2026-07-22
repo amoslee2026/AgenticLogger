@@ -430,7 +430,6 @@ def create_server(log_dir: str | Path = "./logs"):
                             "default": "level",
                         },
                         "rid": {"type": "string"},
-                        "file_pattern": {"type": "string"},  # deprecated, ignored
                     },
                 },
             ),
