@@ -393,7 +393,7 @@ def create_server(log_dir: str | Path = "./logs"):
                         "limit": {"type": "integer", "default": 100},
                         "offset": {"type": "integer", "default": 0},
                         "order_by": {"type": "string", "enum": ["ts_asc", "ts_desc", "dur_desc"], "default": "ts_desc"},
-                        "file_pattern": {"type": "string"},
+                        "file_pattern": {"type": "string"},  # deprecated, ignored
                     },
                 },
             ),
@@ -431,7 +431,7 @@ def create_server(log_dir: str | Path = "./logs"):
                             "default": "level",
                         },
                         "rid": {"type": "string"},
-                        "file_pattern": {"type": "string"},
+                        "file_pattern": {"type": "string"},  # deprecated, ignored
                     },
                 },
             ),
