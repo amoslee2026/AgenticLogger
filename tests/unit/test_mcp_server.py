@@ -3,8 +3,6 @@
 @spec-ref: spec/04-read-interface.md §2 — MCP Tool
 """
 
-import json
-from pathlib import Path
 
 import pytest
 

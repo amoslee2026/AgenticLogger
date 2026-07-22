@@ -1,9 +1,7 @@
 """Tests for SQLite backend."""
 
-import tempfile
 from pathlib import Path
 
-import pytest
 
 from agentic_logger import AgentLogger, ErrorCode
 from agentic_logger.storage.sqlite import SQLiteBackend
@@ -245,7 +243,6 @@ class TestSQLiteCoverage:
 
     def _full(self, backend):
         """Write one of each entry type for filter coverage."""
-        from agentic_logger import ErrorCode
         base = {"rid": "r1", "pid": "1"}
         backend.write({**base, "ts": "2026-07-21T01:00:00.000+00:00", "level": "INFO",
                        "msg": "i", "module": "agent.parser", "seq": 1, "dur": 10})
