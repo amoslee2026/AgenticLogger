@@ -58,7 +58,7 @@ class TestWriteRead:
 
     def test_global_context_header(self, tmp_path):
         fp = tmp_path / "ctx.jsonl"
-        b = JSONLBackend(file_path=fp, global_ctx={"program": "test", "user": "alice"})
+        JSONLBackend(file_path=fp, global_ctx={"program": "test", "user": "alice"})
         with open(fp) as f:
             first = json.loads(f.readline())
         assert first["level"] == "__GLOBAL_CTX__"
