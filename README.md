@@ -236,6 +236,7 @@ Microsecond precision prevents collisions when multiple instances start in the s
 |----------|-------------|---------|
 | `AGENTIC_STORAGE` | Force storage backend: `jsonl`, `sqlite`, `auto` | `auto` |
 | `AGENTIC_LOG_DIR` | Default log directory | `./logs` |
+| `AGENTIC_SELF_LOG` | Self-observation: AgenticLogger logs its own CLI/MCP operations. Set `0` to disable | `1` (on) |
 
 #### Programmatic Configuration
 
