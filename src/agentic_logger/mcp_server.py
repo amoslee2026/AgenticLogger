@@ -444,24 +444,37 @@ def dispatch_tool(log_dir: Path, name: str, arguments: dict) -> dict:
     surfacing as an unhandled exception inside the async MCP handler (which
     would return an opaque 500 to the client).
     (@spec-ref: spec/04-read-interface.md — 评审修复: call_tool 无异常隔离)
+
+    Each dispatch is self-logged via :func:`log_mcp_call` so AgenticLogger
+    observes its own read layer (@spec-ref: plan misty-foraging-turtle.md).
     """
+    t0 = time.perf_counter()
+    result: dict | None = None
     try:
         if name == "agentic_log_query":
-            return handle_query(log_dir, **arguments)
-        if name == "agentic_log_trace":
-            return handle_trace(log_dir, **arguments)
-        if name == "agentic_log_stats":
-            return handle_stats(log_dir, **arguments)
-        if name == "agentic_log_traceback":
-            result = handle_traceback(log_dir, **arguments)
-            if result is None:
-                return {"error": f"Traceback not found: {arguments.get('tid')}"}
-            return result
-        return {"error": f"Unknown tool: {name}"}
+            result = handle_query(log_dir, **arguments)
+        elif name == "agentic_log_trace":
+            result = handle_trace(log_dir, **arguments)
+        elif name == "agentic_log_stats":
+            result = handle_stats(log_dir, **arguments)
+        elif name == "agentic_log_traceback":
+            tb = handle_traceback(log_dir, **arguments)
+            result = tb if tb is not None else {"error": f"Traceback not found: {arguments.get('tid')}"}
+        else:
+            result = {"error": f"Unknown tool: {name}"}
+        return result
     except TypeError as e:
-        return {"error": f"Invalid argument: {e}"}
+        result = {"error": f"Invalid argument: {e}"}
+        return result
     except Exception as e:  # defensive — keep the server alive
-        return {"error": f"{type(e).__name__}: {e}"}
+        result = {"error": f"{type(e).__name__}: {e}"}
+        return result
+    finally:
+        # Self-observation: never let logging break the dispatch.
+        try:
+            log_mcp_call(log_dir, name, arguments, result, int((time.perf_counter() - t0) * 1000))
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------------------
