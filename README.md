@@ -261,6 +261,36 @@ storage = SQLiteStorage(
 logger = AgentLogger(program="my_agent", command="run", storage=storage)
 ```
 
+#### Self-Observability (Dogfooding)
+
+AgenticLogger logs its own read-layer operations (every CLI command, every MCP
+tool dispatch) using the `AgentLogger` SDK itself — closing the loop. These
+self-log entries land **alongside** your logs in the same `log_dir` with
+`program="agentic_logger"` (e.g. `agentic_logger_mcp_*.jsonl`,
+`agentic_logger_query_*.jsonl`), so they are part of the queryable dataset.
+
+**Why it matters (token + iteration efficiency):** when AgenticLogger itself
+misbehaves, one targeted query surfaces the cause — no log spelunking, no
+repeated reads.
+
+```bash
+# All self errors in one shot (rid + error_code + duration included)
+agentic-logger query --module "agentic_logger.*" --level ERROR --depth detail
+
+# Full chronological trace of one MCP server session (by rid)
+agentic-logger trace --rid <rid>
+
+# Distribution of self tool / command calls
+agentic-logger stats --group-by module --module "agentic_logger.*"
+
+# Smart aggregation of self error patterns + suggestions
+agentic-logger query --module "agentic_logger.*" --smart
+```
+
+Self-log fields captured per call: `tool`/`command`, `exit`, `dur_ms`,
+`results`, `backends`, compact `args`, and `error` on failure. Files are
+circular-bounded (`max_files=10`). Disable with `AGENTIC_SELF_LOG=0`.
+
 ---
 
 ### 6. Best Practices
