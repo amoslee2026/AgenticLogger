@@ -74,8 +74,9 @@ class TestQuery:
         assert "logs" in data
 
     def test_query_by_error_code(self, cli_env):
+        """error_code field appears in detail/full depth, not summary."""
         base, rid, tid = cli_env
-        r = _run(base + ["query", "--error-code", "IO_NOT_FOUND"])
+        r = _run(base + ["query", "--error-code", "IO_NOT_FOUND", "--depth", "detail"])
         assert r.returncode == 0
         assert "IO_NOT_FOUND" in r.stdout
 
