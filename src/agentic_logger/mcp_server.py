@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
+from agentic_logger.self_log import log_mcp_call
 from agentic_logger.storage.jsonl import JSONLBackend
 from agentic_logger.storage.sqlite import SQLiteBackend
 
