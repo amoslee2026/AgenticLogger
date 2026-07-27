@@ -40,9 +40,22 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 class TestQuery:
-    def test_query_all(self, cli_env):
+    def test_query_all_jsonl_default(self, cli_env):
+        """JSONL is the Agent-First default format — one JSON object per line."""
         base, rid, tid = cli_env
         r = _run(base + ["query"])
+        assert r.returncode == 0
+        lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
+        # Each line should be valid JSON (JSONL format)
+        for line in lines:
+            entry = json.loads(line)
+            assert "ts" in entry
+            assert "level" in entry
+
+    def test_query_all_table_format(self, cli_env):
+        """Table format is the human-readable degraded mode."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--format", "table"])
         assert r.returncode == 0
         assert "Found" in r.stdout
 
@@ -65,6 +78,49 @@ class TestQuery:
         r = _run(base + ["query", "--error-code", "IO_NOT_FOUND"])
         assert r.returncode == 0
         assert "IO_NOT_FOUND" in r.stdout
+
+    def test_query_depth_detail(self, cli_env):
+        """Detail depth includes rid and error_code for debugging."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--level", "ERROR", "--depth", "detail"])
+        assert r.returncode == 0
+        lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
+        for line in lines:
+            entry = json.loads(line)
+            assert "rid" in entry
+            assert "error_code" in entry
+
+    def test_query_depth_full(self, cli_env):
+        """Full depth returns all fields (JSONL)."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--level", "ERROR", "--depth", "full"])
+        assert r.returncode == 0
+        lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
+        for line in lines:
+            entry = json.loads(line)
+            # Full depth should have all auto-fields
+            assert "pid" in entry
+            assert "seq" in entry
+
+    def test_query_custom_fields(self, cli_env):
+        """Custom fields selection returns only requested fields."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--level", "ERROR", "--fields", "ts,msg"])
+        assert r.returncode == 0
+        lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
+        for line in lines:
+            entry = json.loads(line)
+            assert set(entry.keys()) <= {"ts", "msg"}
+
+    def test_query_smart_mode(self, cli_env):
+        """Smart mode returns analysis with stats and suggestions."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--level", "ERROR", "--smart", "--format", "json"])
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert "smart_analysis" in data
+        assert "level_distribution" in data["smart_analysis"]
+        assert "suggestions" in data["smart_analysis"]
 
 
 class TestTrace:
