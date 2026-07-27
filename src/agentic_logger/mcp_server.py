@@ -225,7 +225,7 @@ def handle_query(
     limit: int = 100,
     offset: int = 0,
     order_by: str = "ts_desc",
-    depth: str = "summary",
+    depth: str = "full",
     format: str = "jsonl",
     fields: str | None = None,
     smart: bool = False,
@@ -235,10 +235,10 @@ def handle_query(
     @spec-ref: spec/04-read-interface.md §2.2 — agentic_log_query
 
     Args:
-        depth: Information richness level:
-            - "summary": Compact view (ts, level, module, msg[:80])
+        depth: Information richness level (Agent-First default = "full"):
+            - "full": All fields, JSONL format — Agent default, complete context for decisions
             - "detail": Daily debugging (full msg + rid + error_code + duration)
-            - "full": Deep debugging (all fields, JSONL format)
+            - "summary": Compact view (ts, level, module, msg[:80]) — token-saving only
         format: Output format:
             - "jsonl": Default, Agent-friendly, complete fields
             - "json": Structured JSON array

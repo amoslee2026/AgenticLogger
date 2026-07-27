@@ -357,7 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_query.add_argument("--offset", type=int, default=0)
     p_query.add_argument("--order-by", choices=["ts_asc", "ts_desc", "dur_desc"], default="ts_desc")
     p_query.add_argument("--format", choices=["jsonl", "json", "table"], default="jsonl", help="Output format: jsonl (Agent-friendly, default), json (structured), table (human-readable)")
-    p_query.add_argument("--depth", choices=["summary", "detail", "full"], default="summary", help="Information richness: summary (compact), detail (debugging), full (all fields)")
+    p_query.add_argument("--depth", choices=["summary", "detail", "full"], default="full", help="Information richness: full (all fields, Agent default), detail (debugging), summary (compact, token-saving)")
     p_query.add_argument("--fields", help="Comma-separated field names (e.g., 'ts,level,msg,rid,duration_ms')")
     p_query.add_argument("--smart", action="store_true", help="Enable smart analysis mode (stats + top errors + suggestions)")
 
