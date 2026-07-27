@@ -108,6 +108,10 @@ def cmd_query(args: argparse.Namespace) -> int:
     since = _parse_since(args.since)
     until = _parse_since(args.until)
 
+    # Table format needs all fields for column auto-detection;
+    # JSONL/JSON respect the explicit depth (Agent-First default).
+    effective_depth = "full" if args.format == "table" else args.depth
+
     result = handle_query(
         log_dir,
         rid=args.rid,
@@ -129,7 +133,7 @@ def cmd_query(args: argparse.Namespace) -> int:
         limit=args.limit,
         offset=args.offset,
         order_by=args.order_by,
-        depth=args.depth,
+        depth=effective_depth,
         format=args.format,
         fields=args.fields,
         smart=args.smart,
@@ -138,14 +142,14 @@ def cmd_query(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     elif args.format == "jsonl":
-        # JSONL format: one JSON object per line
+        # JSONL format: one JSON object per line (Agent-First default)
         for entry in result["logs"]:
             print(json.dumps(entry, ensure_ascii=False, default=str))
         if args.smart and "smart_analysis" in result:
             print("\n# Smart Analysis")
             print(json.dumps(result["smart_analysis"], ensure_ascii=False, indent=2, default=str))
     else:
-        # Table format
+        # Table format (human-readable degraded mode)
         columns = ["ts", "level", "module", "msg"]
         if any(e.get("dur") for e in result["logs"]):
             columns.append("dur")

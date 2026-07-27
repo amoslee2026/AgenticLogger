@@ -92,7 +92,7 @@ class TestHandleQuery:
 
     def test_query_min_dur(self, populated_log_dir):
         log_dir, rid, tid = populated_log_dir
-        result = handle_query(log_dir, min_dur=1000)
+        result = handle_query(log_dir, min_dur=1000, depth="full")
         assert result["count"] >= 1
         for log in result["logs"]:
             assert (log.get("dur") or 0) >= 1000
@@ -104,7 +104,7 @@ class TestHandleQuery:
 
     def test_query_order_by_dur_desc(self, populated_log_dir):
         log_dir, rid, tid = populated_log_dir
-        result = handle_query(log_dir, order_by="dur_desc", limit=5)
+        result = handle_query(log_dir, order_by="dur_desc", limit=5, depth="full")
         durs = [log.get("dur", 0) for log in result["logs"]]
         assert durs == sorted(durs, reverse=True)
 

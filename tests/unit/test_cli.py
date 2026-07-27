@@ -276,9 +276,15 @@ def _parse(populated_cli, *opts):
 
 
 class TestDirectCommands:
-    def test_query_table_and_json(self, populated_cli, capsys):
+    def test_query_jsonl_default_and_table(self, populated_cli, capsys):
         from agentic_logger.cli import cmd_query
+        # JSONL is the Agent-First default
         assert cmd_query(_parse(populated_cli, "query")) == 0
+        out = capsys.readouterr().out.strip()
+        # Each non-empty line is valid JSON (JSONL)
+        json.loads(out.split("\n")[0])
+        # Table format still works (human-readable degraded mode)
+        assert cmd_query(_parse(populated_cli, "query", "--format", "table")) == 0
         assert "Found" in capsys.readouterr().out
         assert cmd_query(_parse(populated_cli, "query", "--format", "json")) == 0
         json.loads(capsys.readouterr().out)
