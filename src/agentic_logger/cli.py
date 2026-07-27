@@ -416,12 +416,30 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    # Self-observation: record this invocation via AgenticLogger itself.
+    # (@spec-ref: plan misty-foraging-turtle.md)
+    t0 = time.perf_counter()
+    exit_code = 0
+    error_msg: str | None = None
     try:
-        sys.exit(handler(args))
+        exit_code = handler(args)
     except ValueError as e:
         # e.g. invalid --since/--until value from _parse_since
+        error_msg = str(e)
         print(f"error: {e}", file=sys.stderr)
-        sys.exit(2)
+        exit_code = 2
+    finally:
+        try:
+            log_cli_call(
+                args.log_dir,
+                args.command,
+                exit_code,
+                int((time.perf_counter() - t0) * 1000),
+                error=error_msg,
+            )
+        except Exception:
+            pass
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
