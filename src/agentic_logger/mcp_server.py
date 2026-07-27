@@ -111,6 +111,99 @@ def _merge_query(
 # ------------------------------------------------------------------
 
 
+def _format_entry_summary(entry: dict) -> dict:
+    """Format entry for summary depth — compact, key fields only."""
+    msg = entry.get("msg", "")
+    if len(msg) > 80:
+        msg = msg[:80] + "..."
+    return {
+        "ts": entry.get("ts", ""),
+        "level": entry.get("level", ""),
+        "module": entry.get("module", ""),
+        "msg": msg,
+    }
+
+
+def _format_entry_detail(entry: dict) -> dict:
+    """Format entry for detail depth — includes rid, error_code, duration."""
+    return {
+        "ts": entry.get("ts", ""),
+        "level": entry.get("level", ""),
+        "module": entry.get("module", ""),
+        "msg": entry.get("msg", ""),
+        "rid": entry.get("rid", ""),
+        "error_code": entry.get("error_code", ""),
+        "duration_ms": entry.get("dur", 0),
+    }
+
+
+def _format_entry_full(entry: dict) -> dict:
+    """Format entry for full depth — all fields (JSONL)."""
+    return entry
+
+
+def _apply_format(entries: list[dict], depth: str, fields: list[str] | None = None) -> list[dict]:
+    """Apply depth and field filtering to entries."""
+    if depth == "full":
+        formatted = [_format_entry_full(e) for e in entries]
+    elif depth == "detail":
+        formatted = [_format_entry_detail(e) for e in entries]
+    else:  # summary
+        formatted = [_format_entry_summary(e) for e in entries]
+
+    # Apply custom field selection if provided
+    if fields:
+        formatted = [{k: e.get(k) for k in fields if k in e} for e in formatted]
+
+    return formatted
+
+
+def _generate_smart_summary(entries: list[dict]) -> dict:
+    """Generate smart analysis summary with stats and top errors."""
+    from collections import Counter
+
+    # Basic stats
+    level_counts = Counter(e.get("level", "UNKNOWN") for e in entries)
+    module_counts = Counter(e.get("module", "unknown") for e in entries)
+    error_code_counts = Counter(e.get("error_code", "NONE") for e in entries if e.get("level") == "ERROR")
+
+    # Top errors (by message similarity)
+    error_msgs = [e.get("msg", "") for e in entries if e.get("level") == "ERROR"]
+    # Group similar errors by first 60 chars
+    error_groups = Counter(msg[:60] for msg in error_msgs if msg)
+    top_errors = [
+        {"pattern": pattern, "count": count, "rid": next((e.get("rid", "") for e in entries if e.get("msg", "").startswith(pattern) and e.get("level") == "ERROR"), "")}
+        for pattern, count in error_groups.most_common(5)
+    ]
+
+    # Time range
+    timestamps = [e.get("ts", "") for e in entries if e.get("ts")]
+    time_range = {
+        "start": min(timestamps) if timestamps else None,
+        "end": max(timestamps) if timestamps else None,
+    }
+
+    # Suggestions
+    suggestions = []
+    if level_counts.get("ERROR", 0) > 10:
+        suggestions.append(f"大量错误 ({level_counts['ERROR']} 条)，建议优先处理高频错误模式")
+    if error_code_counts.get("INTERNAL_UNEXPECTED", 0) > 5:
+        suggestions.append("多次 INTERNAL_UNEXPECTED 错误，建议检查代码逻辑")
+    if module_counts:
+        top_module = module_counts.most_common(1)[0]
+        suggestions.append(f"最活跃模块: {top_module[0]} ({top_module[1]} 条)")
+
+    return {
+        "total_entries": len(entries),
+        "level_distribution": dict(level_counts),
+        "module_distribution": dict(module_counts.most_common(10)),
+        "error_code_distribution": dict(error_code_counts),
+        "top_errors": top_errors,
+        "time_range": time_range,
+        "suggestions": suggestions,
+    }
+
+
 def handle_query(
     log_dir: Path,
     rid: str | None = None,
@@ -132,10 +225,26 @@ def handle_query(
     limit: int = 100,
     offset: int = 0,
     order_by: str = "ts_desc",
+    depth: str = "summary",
+    format: str = "jsonl",
+    fields: str | None = None,
+    smart: bool = False,
 ) -> dict:
     """``agentic_log_query`` — multi-field filtered log search.
 
     @spec-ref: spec/04-read-interface.md §2.2 — agentic_log_query
+
+    Args:
+        depth: Information richness level:
+            - "summary": Compact view (ts, level, module, msg[:80])
+            - "detail": Daily debugging (full msg + rid + error_code + duration)
+            - "full": Deep debugging (all fields, JSONL format)
+        format: Output format:
+            - "jsonl": Default, Agent-friendly, complete fields
+            - "json": Structured JSON array
+            - "table": Human-readable table (deprecated, use for quick browse only)
+        fields: Comma-separated field names to include (e.g., "ts,level,msg,rid")
+        smart: Enable smart analysis mode (stats + top errors + suggestions)
     """
     backends = _load_all_backends(log_dir)
     if not backends:
@@ -180,14 +289,31 @@ def handle_query(
     # Filter out __GLOBAL_CTX__ entries from results
     data_logs = [e for e in logs if e.get("level") != "__GLOBAL_CTX__"]
 
-    return {
+    # Parse fields parameter
+    fields_list = None
+    if fields:
+        fields_list = [f.strip() for f in fields.split(",")]
+
+    # Apply format and depth
+    formatted_logs = _apply_format(data_logs, depth, fields_list)
+
+    # Build result
+    result = {
         "count": len(data_logs),
-        "logs": data_logs,
+        "logs": formatted_logs,
         "query_info": {
             "backends_scanned": len(backends),
             "log_dir": str(log_dir),
+            "depth": depth,
+            "format": format,
         },
     }
+
+    # Add smart analysis if requested
+    if smart:
+        result["smart_analysis"] = _generate_smart_summary(data_logs)
+
+    return result
 
 
 def handle_trace(
@@ -363,10 +489,13 @@ def create_server(log_dir: str | Path = "./logs"):
                 name="agentic_log_query",
                 description=(
                     "Query structured logs with multi-field filters. "
-                    "Supports: rid, level, module (with * glob), error_code, "
+                    "Supports progressive detail levels and Agent-first JSONL format. "
+                    "Parameters: rid, level, module (with * glob), error_code, "
                     "tool, exit_code, op, path, choice, keyword, "
                     "min_dur, max_dur, pid, tid, since, until, "
-                    "order_by (ts_asc/ts_desc/dur_desc), limit, offset."
+                    "order_by (ts_asc/ts_desc/dur_desc), limit, offset, "
+                    "depth (summary/detail/full), format (jsonl/json/table), "
+                    "fields (comma-separated), smart (bool for analysis)."
                 ),
                 inputSchema={
                     "type": "object",
@@ -393,6 +522,10 @@ def create_server(log_dir: str | Path = "./logs"):
                         "limit": {"type": "integer", "default": 100},
                         "offset": {"type": "integer", "default": 0},
                         "order_by": {"type": "string", "enum": ["ts_asc", "ts_desc", "dur_desc"], "default": "ts_desc"},
+                        "depth": {"type": "string", "enum": ["summary", "detail", "full"], "default": "summary", "description": "Information richness: summary (compact), detail (debugging), full (all fields)"},
+                        "format": {"type": "string", "enum": ["jsonl", "json", "table"], "default": "jsonl", "description": "Output format: jsonl (Agent-friendly, default), json (structured), table (human-readable, deprecated)"},
+                        "fields": {"type": "string", "description": "Comma-separated field names to include (e.g., 'ts,level,msg,rid,duration_ms')"},
+                        "smart": {"type": "boolean", "default": False, "description": "Enable smart analysis mode (stats + top errors + suggestions)"},
                     },
                 },
             ),
