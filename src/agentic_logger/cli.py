@@ -31,7 +31,6 @@ from agentic_logger.mcp_server import (
     handle_traceback,
     _load_all_backends,
 )
-from agentic_logger.self_log import log_cli_call
 
 
 def _parse_since(since: str | None) -> str | None:
