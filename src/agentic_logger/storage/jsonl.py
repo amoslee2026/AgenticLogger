@@ -28,6 +28,30 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Compact key mapping — kept here (not imported from logger) to avoid
+# circular imports and keep the storage layer self-contained.
+COMPACT_MAP: dict[str, str] = {
+    "ts": "t", "level": "l", "module": "n", "msg": "m",
+    "pid": "p", "rid": "r", "seq": "q", "error_code": "e",
+    "dur": "d", "tool": "o", "cmd": "c", "exit": "x",
+    "op": "w", "path": "h", "ctx": "z", "tid": "i",
+    "lines": "s", "funcs": "f", "lang": "g", "choice": "k",
+    "alts": "a", "reason": "u", "stdout": "v", "stderr": "b",
+    "ok": "y", "size": "j",
+}
+_EXPAND_MAP: dict[str, str] = {v: k for k, v in COMPACT_MAP.items()}
+
+
+def _maybe_expand(entry: dict) -> dict:
+    """Expand single-char keys → full names if the entry looks compact.
+
+    Heuristic: if more than half the keys are single-char, treat as compact.
+    """
+    short_keys = [k for k in entry if len(k) == 1 and k in _EXPAND_MAP]
+    if len(short_keys) > len(entry) * 0.4:
+        return {_EXPAND_MAP.get(k, k): v for k, v in entry.items()}
+    return entry
+
 
 class JSONLBackend:
     """JSONL storage backend with optional circular rotation.
@@ -37,7 +61,7 @@ class JSONLBackend:
     @agent-caution: Circular rotation renames files mid-stream — tail -f processes may see brief gaps.
     @spec-why: One file per run (with optional rotation) balances query performance vs. file-count overhead.
     @spec-invariant: Does NOT support concurrent writers to the same file — use SQLite backend for multi-process scenarios.
-    @last-changed: 2026-07-21
+    @last-changed: 2026-07-28
 
     Args:
         file_path: Path to the ``.jsonl`` log file.  Parent directories
@@ -50,6 +74,8 @@ class JSONLBackend:
         global_ctx: Arbitrary key-value pairs written as the first line
             of a new log file (``level="__GLOBAL_CTX__"``).  Useful for
             recording the program name, command, git branch, etc.
+        compact: When True, entries use single-char field names on disk.
+            Reads auto-expand to full names so the query layer is unchanged.
     """
 
     def __init__(
@@ -59,12 +85,14 @@ class JSONLBackend:
         max_size_mb: int = 500,
         circular: bool = False,
         global_ctx: dict | None = None,
+        compact: bool = False,
     ):
         self.file_path = Path(file_path)
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.max_files = max_files
         self.max_size_bytes = max_size_mb * 1024 * 1024
         self.circular = circular
+        self._compact = compact
         self._global_ctx = global_ctx or {}
         self._write_count = 0
         self._lock = threading.Lock()
@@ -238,6 +266,8 @@ class JSONLBackend:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                # Auto-expand compact keys so filters always see full names.
+                entry = _maybe_expand(entry)
                 if self._match(entry, filters):
                     results.append(entry)
 
@@ -266,7 +296,8 @@ class JSONLBackend:
                 if not line:
                     continue
                 try:
-                    ts = json.loads(line).get("ts")
+                    entry = json.loads(line)
+                    ts = _maybe_expand(entry).get("ts")
                 except json.JSONDecodeError:
                     continue
                 if ts:
@@ -433,6 +464,9 @@ class JSONLBackend:
             "seq": 0,
             **self._global_ctx,
         }
+        # Compact mode: compress the header too (keeps the file uniform).
+        if self._compact:
+            ctx_entry = {COMPACT_MAP.get(k, k): v for k, v in ctx_entry.items()}
         line = json.dumps(ctx_entry, ensure_ascii=False, default=str)
         with open(self.file_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")

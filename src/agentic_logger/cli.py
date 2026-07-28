@@ -143,14 +143,21 @@ def cmd_query(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     elif args.format == "jsonl":
-        # JSONL format: one JSON object per line (Agent-First default)
+        # JSONL format: one JSON object per line
         for entry in result["logs"]:
             print(json.dumps(entry, ensure_ascii=False, default=str))
         if args.smart and "smart_analysis" in result:
             print("\n# Smart Analysis")
             print(json.dumps(result["smart_analysis"], ensure_ascii=False, indent=2, default=str))
+    elif args.format in ("tsv", "markdown"):
+        # Token-efficient table — print pre-rendered text directly.
+        if result.get("table"):
+            print(result["table"])
+        else:
+            print("(empty)")
+        print(f"\n# {result['count']} entries")
     else:
-        # Table format (human-readable degraded mode)
+        # Legacy "table" format — aligned, human-readable (CLI-only).
         columns = ["ts", "level", "module", "msg"]
         if any(e.get("dur") for e in result["logs"]):
             columns.append("dur")
@@ -357,7 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_query.add_argument("--limit", type=int, default=100)
     p_query.add_argument("--offset", type=int, default=0)
     p_query.add_argument("--order-by", choices=["ts_asc", "ts_desc", "dur_desc"], default="ts_desc")
-    p_query.add_argument("--format", choices=["jsonl", "json", "table"], default="jsonl", help="Output format: jsonl (Agent-friendly, default), json (structured), table (human-readable)")
+    p_query.add_argument("--format", choices=["tsv", "markdown", "jsonl", "json", "table"], default="tsv", help="Output format: tsv (tab-separated, default, token-efficient), markdown (GitHub table), jsonl (one-JSON-per-line), json (structured array), table (legacy aligned)")
     p_query.add_argument("--depth", choices=["summary", "detail", "full"], default="full", help="Information richness: full (all fields, Agent default), detail (debugging), summary (compact, token-saving)")
     p_query.add_argument("--fields", help="Comma-separated field names (e.g., 'ts,level,msg,rid,duration_ms')")
     p_query.add_argument("--smart", action="store_true", help="Enable smart analysis mode (stats + top errors + suggestions)")

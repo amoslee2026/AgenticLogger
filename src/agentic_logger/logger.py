@@ -34,6 +34,37 @@ from agentic_logger.fields import AutoFields, auto_module
 from agentic_logger.storage.jsonl import JSONLBackend
 from agentic_logger.storage.sqlite import SQLiteBackend
 
+# ------------------------------------------------------------------
+# Compact key mapping — reduces per-entry structural overhead ~40 %
+# ------------------------------------------------------------------
+# Full key → single-char key.  Only keys that appear in log entries
+# are mapped; the reverse mapping is built automatically for reads.
+# @spec-why: Standard JSONL repeats field names in every line —
+#   'level'/'module'/'ts'/etc. are 57 % of a short entry.  Compact
+#   mode shrinks that to ~20 % without losing any data.
+# @last-changed: 2026-07-28
+COMPACT_MAP: dict[str, str] = {
+    "ts": "t", "level": "l", "module": "n", "msg": "m",
+    "pid": "p", "rid": "r", "seq": "q", "error_code": "e",
+    "dur": "d", "tool": "o", "cmd": "c", "exit": "x",
+    "op": "w", "path": "h", "ctx": "z", "tid": "i",
+    "lines": "s", "funcs": "f", "lang": "g", "choice": "k",
+    "alts": "a", "reason": "u", "stdout": "v", "stderr": "b",
+    "ok": "y", "size": "j",
+}
+EXPAND_MAP: dict[str, str] = {v: k for k, v in COMPACT_MAP.items()}
+
+
+def _compact_keys(entry: dict) -> dict:
+    """Map full field names → single-char keys in-place.  Keys not in
+    ``COMPACT_MAP`` pass through unchanged."""
+    return {COMPACT_MAP.get(k, k): v for k, v in entry.items()}
+
+
+def _expand_keys(entry: dict) -> dict:
+    """Map single-char keys → full field names in-place (read path)."""
+    return {EXPAND_MAP.get(k, k): v for k, v in entry.items()}
+
 
 def _sanitize_filename_part(s: str, max_len: int = 50) -> str:
     """Sanitise *s* for use inside a log filename.
@@ -128,10 +159,13 @@ class AgentLogger:
         circular: bool = False,
         max_files: int = 10,
         max_size_mb: int = 500,
+        compact: bool = False,
     ):
         self.program = program
         self.command = command or f"pid{os.getpid()}"
         self.log_dir = Path(log_dir)
+        self._circular = circular
+        self._compact = compact
 
         # Auto-fields: ts / pid / rid / seq
         self._fields = AutoFields(rid=rid)
@@ -166,6 +200,7 @@ class AgentLogger:
                 max_size_mb=max_size_mb,
                 circular=circular,
                 global_ctx=self._global_ctx,
+                compact=compact,
             )
 
         # Lifecycle tracking + atexit safety net
@@ -561,11 +596,17 @@ class AgentLogger:
         """Build the log filename.
 
         @spec-ref: spec/05-storage.md §2.2 — {program}_{cmd}_{YYYYMMDD}_{HHmmssffffff}.{ext}
-        """
-        now = datetime.now()
-        date_str = now.strftime("%Y%m%d")
-        time_str = now.strftime("%H%M%S") + f"{now.microsecond:06d}"
 
+        When *circular* is enabled, the filename is **stable**
+        (``{program}_{command}.jsonl``) — rotation produces timestamped
+        siblings rather than a new file on every instantiation.  This
+        prevents file-count explosion for long-running daemons that
+        restart frequently (e.g. systemd Restart=on-failure).
+
+        @spec-why: 212 tiny files for one daemon (avg 15 KB) — each query
+          opens every file.  A stable base name reduces active files to ~3-5.
+        @last-changed: 2026-07-28
+        """
         safe_program = _sanitize_filename_part(self.program)
         safe_command = _sanitize_filename_part(self.command)
 
@@ -576,6 +617,13 @@ class AgentLogger:
         )
         ext = "sqlite" if backend == "sqlite" else "jsonl"
 
+        # Circular mode: stable filename — rotation creates timestamped siblings.
+        if self._circular:
+            return f"{safe_program}_{safe_command}.{ext}"
+
+        now = datetime.now()
+        date_str = now.strftime("%Y%m%d")
+        time_str = now.strftime("%H%M%S") + f"{now.microsecond:06d}"
         return f"{safe_program}_{safe_command}_{date_str}_{time_str}.{ext}"
 
     def _write(
@@ -634,6 +682,10 @@ class AgentLogger:
         # Omit None values to save tokens
         # (@spec-ref: spec/03-write-sdk.md — 评审修复 R06)
         entry = {k: v for k, v in entry.items() if v is not None}
+
+        # Compact mode: compress field names to single chars
+        if self._compact:
+            entry = _compact_keys(entry)
 
         try:
             self._backend.write(entry)
