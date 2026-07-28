@@ -40,20 +40,18 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 class TestQuery:
-    def test_query_all_jsonl_default(self, cli_env):
-        """JSONL is the Agent-First default format — one JSON object per line."""
+    def test_query_all_tsv_default(self, cli_env):
+        """TSV is the default format — tab-separated, header row, token-efficient."""
         base, rid, tid = cli_env
         r = _run(base + ["query"])
         assert r.returncode == 0
         lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
-        # Each line should be valid JSON (JSONL format)
-        for line in lines:
-            entry = json.loads(line)
-            assert "ts" in entry
-            assert "level" in entry
+        # First line is the TSV header
+        assert "\t" in lines[0], f"Expected TSV header, got: {lines[0][:60]}"
+        assert "time" in lines[0] or "L" in lines[0]
 
     def test_query_all_table_format(self, cli_env):
-        """Table format is the human-readable degraded mode."""
+        """Legacy 'table' format is the human-readable aligned mode."""
         base, rid, tid = cli_env
         r = _run(base + ["query", "--format", "table"])
         assert r.returncode == 0
@@ -73,6 +71,24 @@ class TestQuery:
         assert "count" in data
         assert "logs" in data
 
+    def test_query_jsonl_format(self, cli_env):
+        """Explicit --format jsonl still produces one JSON per line."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--format", "jsonl"])
+        assert r.returncode == 0
+        lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
+        for line in lines:
+            entry = json.loads(line)
+            assert "ts" in entry
+
+    def test_query_tsv_format_explicit(self, cli_env):
+        """Explicit --format tsv produces tab-separated output."""
+        base, rid, tid = cli_env
+        r = _run(base + ["query", "--format", "tsv"])
+        assert r.returncode == 0
+        lines = r.stdout.strip().split("\n")
+        assert any("\t" in ln for ln in lines)
+
     def test_query_by_error_code(self, cli_env):
         """error_code field appears in detail/full depth, not summary."""
         base, rid, tid = cli_env
@@ -80,10 +96,10 @@ class TestQuery:
         assert r.returncode == 0
         assert "IO_NOT_FOUND" in r.stdout
 
-    def test_query_depth_detail(self, cli_env):
-        """Detail depth includes rid and error_code for debugging."""
+    def test_query_depth_detail_jsonl(self, cli_env):
+        """Detail depth + explicit jsonl includes rid and error_code."""
         base, rid, tid = cli_env
-        r = _run(base + ["query", "--level", "ERROR", "--depth", "detail"])
+        r = _run(base + ["query", "--level", "ERROR", "--depth", "detail", "--format", "jsonl"])
         assert r.returncode == 0
         lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
         for line in lines:
@@ -92,9 +108,9 @@ class TestQuery:
             assert "error_code" in entry
 
     def test_query_depth_full(self, cli_env):
-        """Full depth returns all fields (JSONL)."""
+        """Full depth returns all fields (via explicit jsonl)."""
         base, rid, tid = cli_env
-        r = _run(base + ["query", "--level", "ERROR", "--depth", "full"])
+        r = _run(base + ["query", "--level", "ERROR", "--depth", "full", "--format", "jsonl"])
         assert r.returncode == 0
         lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
         for line in lines:
@@ -103,10 +119,10 @@ class TestQuery:
             assert "pid" in entry
             assert "seq" in entry
 
-    def test_query_custom_fields(self, cli_env):
-        """Custom fields selection returns only requested fields."""
+    def test_query_custom_fields_jsonl(self, cli_env):
+        """Custom fields selection returns only requested fields (via jsonl)."""
         base, rid, tid = cli_env
-        r = _run(base + ["query", "--level", "ERROR", "--fields", "ts,msg"])
+        r = _run(base + ["query", "--level", "ERROR", "--fields", "ts,msg", "--format", "jsonl"])
         assert r.returncode == 0
         lines = [ln for ln in r.stdout.strip().split("\n") if ln.strip()]
         for line in lines:
@@ -276,18 +292,22 @@ def _parse(populated_cli, *opts):
 
 
 class TestDirectCommands:
-    def test_query_jsonl_default_and_table(self, populated_cli, capsys):
+    def test_query_tsv_default_and_formats(self, populated_cli, capsys):
         from agentic_logger.cli import cmd_query
-        # JSONL is the Agent-First default
+        # TSV is the default
         assert cmd_query(_parse(populated_cli, "query")) == 0
         out = capsys.readouterr().out.strip()
-        # Each non-empty line is valid JSON (JSONL)
-        json.loads(out.split("\n")[0])
-        # Table format still works (human-readable degraded mode)
-        assert cmd_query(_parse(populated_cli, "query", "--format", "table")) == 0
-        assert "Found" in capsys.readouterr().out
+        # First line is TSV header
+        assert "\t" in out.split("\n")[0]
+        # Explicit jsonl still works
+        assert cmd_query(_parse(populated_cli, "query", "--format", "jsonl")) == 0
+        json.loads(capsys.readouterr().out.split("\n")[0])
+        # Explicit json still works
         assert cmd_query(_parse(populated_cli, "query", "--format", "json")) == 0
         json.loads(capsys.readouterr().out)
+        # Legacy table still works
+        assert cmd_query(_parse(populated_cli, "query", "--format", "table")) == 0
+        assert "Found" in capsys.readouterr().out
 
     def test_query_with_filters(self, populated_cli, capsys):
         from agentic_logger.cli import cmd_query
