@@ -20,6 +20,10 @@ Log file: `./logs/my_agent_build_20260721_133834090719.jsonl`
 
 ## Installation
 
+For detailed installation instructions, see [Installation Guide](docs/INSTALLATION.md).
+
+### Quick Install
+
 ```bash
 pip install agentic-logger
 
