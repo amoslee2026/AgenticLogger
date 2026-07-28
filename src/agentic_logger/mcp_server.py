@@ -27,13 +27,48 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from agentic_logger.self_log import log_mcp_call
 from agentic_logger.storage.jsonl import JSONLBackend
 from agentic_logger.storage.sqlite import SQLiteBackend
+
+
+# ------------------------------------------------------------------
+# Time helper — resolve relative time strings to ISO timestamps
+# ------------------------------------------------------------------
+
+_RELATIVE_TIME_RE = re.compile(r"^(\d+)\s*(s|m|h|d|w)$", re.IGNORECASE)
+_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _resolve_time(value: str | None) -> str | None:
+    """Convert relative time strings (e.g. ``"6h"``, ``"30m"``, ``"7d"``) to ISO 8601.
+
+    Already-absolute ISO strings pass through unchanged.  Returns *None* when
+    *value* is *None* so callers can default without branching.
+
+    @spec-why: The MCP tool interface advertises relative-time support but the
+      query layer passed raw strings to ``JSONLBackend._match``, which does
+      lexical comparison — ``"2026-07-28T..." < "6h"`` always filtered out all
+      entries.  Resolving to absolute timestamps fixes the silent-data-loss bug.
+    @spec-invariant: Does NOT raise on malformed input — unrecognised strings pass
+      through as-is (backend ``since``/``until`` comparison is best-effort).
+    @last-changed: 2026-07-28
+    """
+    if value is None:
+        return None
+    m = _RELATIVE_TIME_RE.match(value.strip())
+    if not m:
+        return value  # pass through absolute ISO or unrecognised
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    delta = timedelta(seconds=n * _UNIT_SECONDS[unit])
+    return (datetime.now(timezone.utc) - delta).isoformat(timespec="milliseconds")
 
 
 def _load_all_backends(log_dir: Path) -> list[JSONLBackend | SQLiteBackend]:
@@ -286,7 +321,9 @@ def handle_query(
     filters["offset"] = offset
     filters["order_by"] = order_by
 
-    logs = _merge_query(backends, since=since, until=until, **filters)
+    since_iso = _resolve_time(since)
+    until_iso = _resolve_time(until)
+    logs = _merge_query(backends, since=since_iso, until=until_iso, **filters)
 
     # Filter out __GLOBAL_CTX__ entries from results
     data_logs = [e for e in logs if e.get("level") != "__GLOBAL_CTX__"]
@@ -397,7 +434,9 @@ def handle_stats(
     if rid:
         filters["rid"] = rid
 
-    all_entries = _merge_query(backends, since=since, until=until, **filters)
+    since_iso = _resolve_time(since)
+    until_iso = _resolve_time(until)
+    all_entries = _merge_query(backends, since=since_iso, until=until_iso, **filters)
     data_entries = [e for e in all_entries if e.get("level") != "__GLOBAL_CTX__"]
 
     # Group

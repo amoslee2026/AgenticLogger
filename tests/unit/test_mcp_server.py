@@ -8,6 +8,7 @@ import pytest
 
 from agentic_logger import AgentLogger, ErrorCode
 from agentic_logger.mcp_server import (
+    _resolve_time,
     create_server,
     handle_query,
     handle_stats,
@@ -350,6 +351,36 @@ class TestHandleStatsEdge:
         r = handle_stats(populated_log_dir[0], group_by="nonexistent_field")
         assert r["total"] >= 1
         assert any(g["key"] == "unknown" for g in r["groups"])
+
+
+class TestResolveTime:
+    """Tests for _resolve_time — relative → ISO conversion."""
+
+    def test_relative_units(self):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        # Allow ±2s tolerance for test execution
+        for val, unit in [("30s", 30), ("5m", 300), ("2h", 7200), ("1d", 86400)]:
+            result = _resolve_time(val)
+            expected = (now - timedelta(seconds=unit)).isoformat(timespec="milliseconds")
+            # Just verify the prefix matches (date + hour) since seconds may drift
+            assert result[:13] == expected[:13], f"{val} → {result} ≠ {expected}"
+
+    def test_absolute_passthrough(self):
+        iso = "2026-07-28T10:00:00.000+00:00"
+        assert _resolve_time(iso) == iso
+
+    def test_none_passthrough(self):
+        assert _resolve_time(None) is None
+
+    def test_unrecognised_passthrough(self):
+        assert _resolve_time("yesterday") == "yesterday"
+
+    def test_whitespace_tolerant(self):
+        result = _resolve_time("  2h  ")
+        assert result is not None
+        assert "T" in result  # Must be ISO-like
 
 
 class TestMainRuntime:
