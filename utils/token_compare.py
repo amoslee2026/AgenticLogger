@@ -354,34 +354,50 @@ def print_disk_summary(stdlib_path: Path, agentic_dir: Path, n_events: int) -> N
     print()
 
 
-def measure(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> int:
-    """Run the 3-step health-check on both corpora; print token comparison."""
-    # --- AgenticLogger side ---
+def capture_workflow(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> dict:
+    """Produce the 6 step output texts (3 steps x stdlib/agentic) + meta.
+
+    Shared by measure() [token counting] and llmtime() [LLM ingestion timing] so
+    both report against identical text. Raises RuntimeError if the corpus has no
+    errors to diagnose.
+
+    @spec-invariant: Read-only; does not print or mutate.
+    """
     a_stats = _run_agentic(agentic_dir, ["stats", "--group-by", "error_code"])
     top = _parse_top_error_code(a_stats)
     if top is None:
-        print("No error codes found in agentic corpus; cannot measure.", file=sys.stderr)
-        return 1
-    # rid bookkeeping (uncounted): an agent would lift this from its step-2 read.
+        raise RuntimeError("no error codes in agentic corpus")
     det = _run_agentic(agentic_dir, ["query", "--error-code", top, "--level", "ERROR",
                                      "--format", "jsonl", "--limit", "1"])
     rid = _parse_first_rid(det)
     if rid is None:
-        print("Could not resolve a trace rid; cannot measure.", file=sys.stderr)
-        return 1
+        raise RuntimeError("could not resolve a trace rid")
     a_query = _run_agentic(agentic_dir, ["query", "--error-code", top, "--limit", "100"])
     a_trace = _run_agentic(agentic_dir, ["trace", "--rid", rid])
 
-    # --- stdlib side ---
     lines = Path(stdlib_path).read_text(encoding="utf-8", errors="ignore").splitlines()
-    s_stats = _stdlib_error_lines(lines)
-    s_query = _stdlib_grep(lines, top, context)
-    s_trace = _stdlib_grep(lines, f"request_id={rid}", 0)
+    return {
+        "top": top, "rid": rid,
+        "s1": _stdlib_error_lines(lines),
+        "s2": _stdlib_grep(lines, top, context),
+        "s3": _stdlib_grep(lines, f"request_id={rid}", 0),
+        "a1": a_stats, "a2": a_query, "a3": a_trace,
+    }
+
+
+def measure(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> int:
+    """Run the 3-step health-check on both corpora; print token comparison."""
+    try:
+        cap = capture_workflow(stdlib_path, agentic_dir, context=context)
+    except RuntimeError as e:
+        print(f"{e}; cannot measure.", file=sys.stderr)
+        return 1
+    top, rid = cap["top"], cap["rid"]
 
     rows = [
-        (f"1. error distribution", count_tokens(s_stats), count_tokens(a_stats)),
-        (f"2. drill top error ({top})", count_tokens(s_query), count_tokens(a_query)),
-        (f"3. trace one request (rid {rid[:8]})", count_tokens(s_trace), count_tokens(a_trace)),
+        ("1. error distribution", count_tokens(cap["s1"]), count_tokens(cap["a1"])),
+        (f"2. drill top error ({top})", count_tokens(cap["s2"]), count_tokens(cap["a2"])),
+        (f"3. trace one request (rid {rid[:8]})", count_tokens(cap["s3"]), count_tokens(cap["a3"])),
     ]
     tot_s = sum(r[1] for r in rows)
     tot_a = sum(r[2] for r in rows)
