@@ -42,6 +42,13 @@ COMPACT_MAP: dict[str, str] = {
 }
 _EXPAND_MAP: dict[str, str] = {v: k for k, v in COMPACT_MAP.items()}
 
+# Bounded level enum — powers the bytes.count fast path in stats().
+_LEVELS: tuple[str, ...] = (
+    "INFO", "WARN", "ERROR", "TOOL", "FILE_OP", "DECISION", "CODE_GEN", "CONTEXT", "DEBUG",
+)
+# Fields stored as unquoted JSON numbers — stats() uses a different capture pattern.
+_NUMERIC_KEYS: frozenset[str] = frozenset({"pid", "seq", "dur", "exit", "size"})
+
 
 def _maybe_expand(entry: dict) -> dict:
     """Expand single-char keys → full names if the entry looks compact.
