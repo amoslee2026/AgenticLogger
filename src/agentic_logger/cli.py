@@ -241,8 +241,15 @@ def cmd_tail(args: argparse.Namespace) -> int:
     seen: set[tuple] = set()
     try:
         while True:
-            # Read new entries
-            entries = latest.query(limit=100, order_by="ts_asc")
+            # Read recent entries. With no filter, tail() reads a bounded chunk
+            # from the file end (O(n)); with a filter, query() is grep-fast.
+            if args.level or args.module or args.error_code:
+                entries = latest.query(
+                    limit=100, order_by="ts_asc",
+                    level=args.level, module=args.module, error_code=args.error_code,
+                )
+            else:
+                entries = latest.tail(100)
             for entry in entries:
                 key = (entry.get("ts"), entry.get("seq"))
                 if key in seen:
