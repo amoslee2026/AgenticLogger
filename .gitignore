@@ -36,8 +36,8 @@ Thumbs.db
 # Logs
 *.log
 
-# 临时删除目录（按全局规则）
-temp/deleted/
+# 临时目录（含 deleted/ 回收站与 benchmark 语料，勿入 git）
+temp/
 
 # Research reports
 research_reports/
