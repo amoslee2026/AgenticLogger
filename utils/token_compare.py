@@ -287,8 +287,12 @@ def _parse_first_rid(jsonl_text: str) -> str | None:
 # Stdlib workflow — in-process grep/triage equivalents.
 # ------------------------------------------------------------------
 def _stdlib_error_lines(lines: list[str]) -> str:
-    """All ERROR lines — what an agent must read to cluster by type (no error_code field)."""
-    return "\n".join(ln for ln in lines if " [ERROR] " in ln)
+    """All ERROR lines — what an agent must read to cluster by type (no error_code field).
+
+    Matches the verbose formatter's ``levelname=ERROR`` token (trailing space avoids
+    matching the substring inside a longer level name).
+    """
+    return "\n".join(ln for ln in lines if "levelname=ERROR " in ln)
 
 
 def _stdlib_grep(lines: list[str], needle: str, context: int) -> str:
