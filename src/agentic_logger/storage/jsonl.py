@@ -329,22 +329,32 @@ class JSONLBackend:
         if nl != -1 and b"__GLOBAL_CTX__" in data[:nl]:
             data = data[nl + 1:]
 
+        # Total data entries = line count (every entry is one newline-terminated line;
+        # JSON escapes newlines in values, so no false line breaks).
+        total = data.count(b"\n")
+
         key = COMPACT_MAP.get(group_by, group_by) if self._compact else group_by
         key_b = key.encode("utf-8")
 
         # bytes.count fast path for the bounded level enum (default group_by).
         # Needle `'<key>": "INFO"'` is an exact-value match (closing quote prevents
-        # prefix collisions) and excludes the (already stripped) header.
+        # prefix collisions). Custom (non-enum) levels fall through to "unknown".
         if group_by == "level":
             sep = b'"' + key_b + b'": "'
-            return Counter({lv: data.count(sep + lv.encode() + b'"') for lv in _LEVELS})
-
-        # General path: one C-level regex scan over the whole file, Counter captures.
-        if group_by in _NUMERIC_KEYS:
+            counts: Counter = Counter({lv: data.count(sep + lv.encode() + b'"') for lv in _LEVELS})
+        elif group_by in _NUMERIC_KEYS:
             pattern = b'"' + key_b + b'": ([^,}]+)'
-            return Counter(v.strip().decode("utf-8", "ignore") for v in re.findall(pattern, data))
-        pattern = b'"' + key_b + b'": "([^"]+)"'
-        return Counter(v.decode("utf-8", "ignore") for v in re.findall(pattern, data))
+            counts = Counter(v.strip().decode("utf-8", "ignore") for v in re.findall(pattern, data))
+        else:
+            pattern = b'"' + key_b + b'": "([^"]+)"'
+            counts = Counter(v.decode("utf-8", "ignore") for v in re.findall(pattern, data))
+
+        # Entries without the grouped field bucket as "unknown" (matches the legacy
+        # query()-based semantics, e.g. INFO entries have no error_code).
+        unknown = total - sum(counts.values())
+        if unknown > 0:
+            counts["unknown"] = unknown
+        return counts
 
     def get_time_range(self) -> dict | None:
         """Return ``{min_ts, max_ts}`` for this file, or *None* if empty.
