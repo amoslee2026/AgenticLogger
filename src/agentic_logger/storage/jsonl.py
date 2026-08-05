@@ -431,26 +431,27 @@ class JSONLBackend:
         Used by the query engine to skip files whose time range does not
         overlap the caller's ``since``/``until`` filter
         (@spec-ref: spec/04-read-interface.md §5.1 — 查询合并方案).
+
+        Byte-level: one ``re.findall`` over the ts field instead of per-line
+        ``json.loads`` (~1s -> ~0.1s at 100K). ISO-8601 ts sort lexicographically.
+
+        @last-changed: 2026-08-05
         """
         if not self.file_path.exists() or self.file_path.stat().st_size == 0:
             return None
-        min_ts = max_ts = None
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    ts = _maybe_expand(entry).get("ts")
-                except json.JSONDecodeError:
-                    continue
-                if ts:
-                    if min_ts is None or ts < min_ts:
-                        min_ts = ts
-                    if max_ts is None or ts > max_ts:
-                        max_ts = ts
-        return {"min_ts": min_ts, "max_ts": max_ts} if min_ts else None
+        data = self.file_path.read_bytes()
+        nl = data.find(b"\n")
+        if nl != -1 and b"__GLOBAL_CTX__" in data[:nl]:
+            data = data[nl + 1:]
+        is_compact = b'"l":' in data[:512] and b'"level":' not in data[:512]
+        key = "t" if is_compact else "ts"
+        tss = re.findall(b'"' + key.encode() + b'": "([^"]+)"', data)
+        if not tss:
+            return None
+        return {
+            "min_ts": min(tss).decode("utf-8", "ignore"),
+            "max_ts": max(tss).decode("utf-8", "ignore"),
+        }
 
     # ------------------------------------------------------------------
     # Internal — Circular Rotation
