@@ -46,8 +46,10 @@ from pathlib import Path
 # Ensure 'agentic_logger' resolves to the src/ PACKAGE, not the utils/agentic_logger.py
 # helper that shadows it when this script runs from inside utils/. Must run before the
 # deferred `from agentic_logger import AgentLogger` in generate_corpus().
+# NOTE: insert unconditionally — src may already be on sys.path (editable install)
+# but AFTER the script dir, so a "not in sys.path" guard would wrongly skip this.
 _PKG_SRC = Path(__file__).resolve().parent.parent / "src"
-if _PKG_SRC.is_dir() and str(_PKG_SRC) not in sys.path:
+if _PKG_SRC.is_dir():
     sys.path.insert(0, str(_PKG_SRC))
 
 # ------------------------------------------------------------------
