@@ -588,7 +588,9 @@ def llmtime(stdlib_path: Path, agentic_dir: Path, endpoint: str, key: str,
         (["grep", f"request_id={rid}", sf], prefix + ["trace", "--rid", rid]),
     ]
 
-    print(f"=== LLM Ingestion TTFT via {model} (median of {runs}, network incl.) ===")
+    # Warmup so the first measured call isn't a cold connection.
+    _llm_ttft_once(endpoint, key, model, "warmup")
+    print(f"=== LLM Ingestion TTFT via {model} (median of {runs}, interleaved, network incl.) ===")
     print(f"endpoint: {endpoint}")
     print(f"{'Step':<34}{'std tok':>9}{'ag tok':>9}{'std ms':>10}{'ag ms':>10}{'LLM save':>10}")
     print("-" * 82)
@@ -597,8 +599,18 @@ def llmtime(stdlib_path: Path, agentic_dir: Path, endpoint: str, key: str,
     tot_s_tool = tot_a_tool = 0.0
     for (name, s_text, a_text), (s_cmd, a_cmd) in zip(steps, tool_cmds):
         s_tok, a_tok = count_tokens(s_text), count_tokens(a_text)
-        s_llm = _llm_ttft(endpoint, key, model, s_text, runs)
-        a_llm = _llm_ttft(endpoint, key, model, a_text, runs)
+        # Interleave stdlib/agentic per run so endpoint queueing hits both sides equally.
+        s_times: list[float] = []
+        a_times: list[float] = []
+        for _ in range(runs):
+            t = _llm_ttft_once(endpoint, key, model, s_text)
+            if t is not None:
+                s_times.append(t)
+            t = _llm_ttft_once(endpoint, key, model, a_text)
+            if t is not None:
+                a_times.append(t)
+        s_llm = _median(s_times) if s_times else None
+        a_llm = _median(a_times) if a_times else None
         s_tool = _time_ms(s_cmd, None, 1)
         a_tool = _time_ms(a_cmd, env0, 1)
         save = _savings(s_llm, a_llm) if (s_llm and a_llm) else "n/a"
