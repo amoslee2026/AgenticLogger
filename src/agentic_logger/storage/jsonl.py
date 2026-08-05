@@ -333,7 +333,14 @@ class JSONLBackend:
         # JSON escapes newlines in values, so no false line breaks).
         total = data.count(b"\n")
 
-        key = COMPACT_MAP.get(group_by, group_by) if self._compact else group_by
+        # Auto-detect compact vs full key form. The backend's ``_compact`` flag is
+        # unreliable on the READ side (readers construct JSONLBackend without it),
+        # so probe the bytes — mirrors the ``_maybe_expand`` heuristic used by query().
+        compact_key = COMPACT_MAP.get(group_by, group_by)
+        if data.count(f'"{compact_key}":'.encode()) >= data.count(f'"{group_by}":'.encode()):
+            key = compact_key
+        else:
+            key = group_by
         key_b = key.encode("utf-8")
 
         # bytes.count fast path for the bounded level enum (default group_by).
