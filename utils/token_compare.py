@@ -355,9 +355,8 @@ def print_disk_summary(stdlib_path: Path, agentic_dir: Path, n_events: int) -> N
 def capture_workflow(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> dict:
     """Produce the 6 step output texts (3 steps x stdlib/agentic) + meta.
 
-    Shared by measure() [token counting] and llmtime() [LLM ingestion timing] so
-    both report against identical text. Raises RuntimeError if the corpus has no
-    errors to diagnose.
+    Shared by measure() [token counting] so it reports against identical text
+    across runs. Raises RuntimeError if the corpus has no errors to diagnose.
 
     @spec-invariant: Read-only; does not print or mutate.
     """
