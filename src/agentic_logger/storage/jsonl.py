@@ -257,6 +257,14 @@ class JSONLBackend:
         (e.g. ``"agent.*"``).  The ``keyword`` filter performs a
         case-insensitive substring search across the entire serialised
         entry (including nested ``ctx`` values).
+
+        Fast path: exact-match filters on string fields (level/error_code/tool/
+        rid/pid/tid, and ``module`` without ``*``) narrow candidate lines via byte
+        scanning BEFORE ``json.loads`` — a large win for sparse filters (a rid
+        narrows 100K lines to ~15). Falls back to a full scan when no exact-match
+        filter is present.
+
+        @last-changed: 2026-08-05
         """
         limit = filters.pop("limit", 1000)
         offset = filters.pop("offset", 0)
@@ -265,20 +273,20 @@ class JSONLBackend:
         if not self.file_path.exists():
             return []
 
-        results = []
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                # Auto-expand compact keys so filters always see full names.
-                entry = _maybe_expand(entry)
-                if self._match(entry, filters):
-                    results.append(entry)
+        active = {k: v for k, v in filters.items() if v is not None}
+
+        # Exact-match filters whose value is a quoted string in the file — these
+        # can narrow candidate lines by byte scanning before json parsing.
+        narrowable = {k: active[k] for k in
+                      ("level", "error_code", "tool", "rid", "pid", "tid")
+                      if k in active}
+        if "module" in active and "*" not in str(active["module"]):
+            narrowable["module"] = active["module"]
+
+        if narrowable:
+            results = self._query_narrowed(active, narrowable)
+        else:
+            results = self._query_full_scan(active)
 
         # Sort
         reverse = order_by != "ts_asc"
@@ -288,6 +296,63 @@ class JSONLBackend:
             results.sort(key=lambda x: x.get("ts", ""), reverse=reverse)
 
         return results[offset : offset + limit]
+
+    def _query_full_scan(self, active: dict) -> list[dict]:
+        """Reference path: parse every line. Used when no exact-match filter."""
+        results: list[dict] = []
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                entry = _maybe_expand(entry)
+                if self._match(entry, active):
+                    results.append(entry)
+        return results
+
+    def _query_narrowed(self, active: dict, narrowable: dict) -> list[dict]:
+        """Byte-narrow candidate lines by exact-match filters, then json-parse
+        only those lines and apply the full ``_match`` for correctness.
+
+        @spec-why: A rid/error_code filter matches O(handful) of 100K lines; parsing
+          only those avoids the ~1s full-file json.loads.
+        @spec-invariant: Results are identical to _query_full_scan — narrowing only
+          skips lines that cannot match (the key:value substring must be present).
+        """
+        data = self.file_path.read_bytes()
+        is_compact = b'"l":' in data[:512] and b'"level":' not in data[:512]
+        needles = [
+            ('"' + (COMPACT_MAP.get(f, f) if is_compact else f) + f'": "{v}"').encode()
+            for f, v in narrowable.items()
+        ]
+
+        results: list[dict] = []
+        first, rest = needles[0], needles[1:]
+        pos = 0
+        while True:
+            p = data.find(first, pos)
+            if p == -1:
+                break
+            ls = data.rfind(b"\n", 0, p) + 1
+            le = data.find(b"\n", p)
+            if le == -1:
+                le = len(data)
+            pos = le + 1  # advance past this line regardless of match
+            line_b = data[ls:le]
+            if rest and not all(n in line_b for n in rest):
+                continue
+            try:
+                entry = json.loads(line_b)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            entry = _maybe_expand(entry)
+            if self._match(entry, active):  # re-verify ALL filters on the candidate
+                results.append(entry)
+        return results
 
     def stats(
         self,
