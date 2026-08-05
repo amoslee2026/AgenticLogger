@@ -119,6 +119,19 @@ def _merge_query(
     offset = filters.pop("offset", 0)
     order_by = filters.pop("order_by", "ts_desc")
 
+    # Fast path: no field/time filter + ts_desc + modest page -> read each backend's
+    # tail (O(page)) instead of scanning the whole file. "Recent N" is the common
+    # no-filter query and was the last slow op (full scan).
+    active = {k: v for k, v in filters.items() if v is not None}
+    fetch_n = limit + offset
+    if not active and since is None and until is None and order_by == "ts_desc" and fetch_n <= 5000:
+        merged: list[dict] = []
+        for b in backends:
+            tail_fn = getattr(b, "tail", None)
+            merged.extend(tail_fn(fetch_n) if tail_fn else b.query(limit=fetch_n, order_by="ts_desc"))
+        merged.sort(key=lambda x: x.get("ts", ""), reverse=True)
+        return merged[offset : offset + limit]
+
     candidates = []
     # Time-range pruning only matters when a since/until filter is set; skip the
     # (now byte-level but still non-zero) get_time_range scan otherwise.
