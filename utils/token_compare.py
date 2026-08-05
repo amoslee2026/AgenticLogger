@@ -164,17 +164,27 @@ def _gen_events(n: int, rng: random.Random, error_rate: float, warn_rate: float)
 
 
 def _render_stdlib_line(ev: dict) -> str:
-    """Render one event as a stdlib-style plain-text log line (~150-300 bytes).
+    """Render one event as a verbose stdlib ``logging.Formatter``-style line.
 
-    ERROR codes appear only inside the message text (e.g. ``[FRONTMATTER_TOO_DEEP]``)
-    — stdlib has no structured error_code field, which is exactly the point.
+    Mimics a real deployment's formatter that carries equivalent observability
+    (process/thread/level/logger/request_id) — the redundant field names are what
+    AgenticLogger's compact keys eliminate. ERROR codes appear only inside the
+    message text (e.g. ``[FRONTMATTER_TOO_DEEP]``); stdlib has no structured
+    error_code field, which is the whole point of the comparison.
+
+    @spec-why: stdlib per-entry size is format-dependent; this verbose formatter
+      reproduces the case study's ~150-300 B/entry range. A terser formatter would
+      shrink the storage saving (and the case study observed ~40-50% with their format).
     """
-    line = (f"[{ev['ts']}] [{ev['level']}] [module={ev['module']}] "
-            f"[req_id={ev['rid']} pid={ev['pid']} seq={ev['seq']}] {ev['msg']}")
+    line = (f"{ev['ts']} processName=MainProcess process={ev['pid']} "
+            f"levelname={ev['level']} logger={ev['module']} "
+            f"request_id={ev['rid']} seq={ev['seq']} — {ev['msg']}")
     if ev["level"] == "TOOL":
-        line += f" tool={ev['tool']} cmd=\"{ev['cmd']}\" exit={ev['exit']} dur={ev['dur']}ms"
+        line += (f" tool={ev['tool']} command=\"{ev['cmd']}\" "
+                 f"exit_code={ev['exit']} duration_ms={ev['dur']}")
     elif ev["level"] == "FILE_OP":
-        line += f" op={ev['op']} path={ev['path']} ok={ev['ok']} size={ev['size']}"
+        line += (f" operation={ev['op']} path={ev['path']} "
+                 f"ok={ev['ok']} size_bytes={ev['size']}")
     return line
 
 
