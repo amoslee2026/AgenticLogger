@@ -551,6 +551,19 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--context", type=int, default=5, help="Stdlib drill context lines (default 5)")
     r.set_defaults(func=cmd_run)
 
+    t = sub.add_parser("timeit", help="Time tool-execution wall-clock per step")
+    t.add_argument("--n", type=int, default=None,
+                   help="Generate fresh corpus of N events (omit to reuse --stdlib/--agentic)")
+    t.add_argument("--out", default="./temp/token_compare", help="Output dir (with --n)")
+    t.add_argument("--seed", type=int, default=20260728)
+    t.add_argument("--error-rate", type=float, default=0.001)
+    t.add_argument("--warn-rate", type=float, default=0.001)
+    t.add_argument("--stdlib", help="Existing stdlib .log path")
+    t.add_argument("--agentic", help="Existing agentic log dir")
+    t.add_argument("--context", type=int, default=5, help="Stdlib drill context lines (default 5)")
+    t.add_argument("--runs", type=int, default=5, help="Timed runs per step (median)")
+    t.set_defaults(func=cmd_timeit)
+
     return p
 
 
