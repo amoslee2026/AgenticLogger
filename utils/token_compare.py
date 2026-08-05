@@ -397,6 +397,85 @@ def measure(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> int:
 
 
 # ------------------------------------------------------------------
+# Wall-clock timing — tool-execution latency per step.
+# ------------------------------------------------------------------
+def _time_ms(cmd: list[str], env: dict | None = None, runs: int = 5) -> float:
+    """Median wall-clock (ms) over *runs* subprocess invocations.
+
+    @spec-why: median filters system jitter; subprocess time is what an agent
+      actually pays per tool call (process spawn + work + output).
+    """
+    times: list[float] = []
+    for _ in range(runs):
+        t0 = time.perf_counter()
+        subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
+        times.append((time.perf_counter() - t0) * 1000.0)
+    times.sort()
+    return times[len(times) // 2]
+
+
+def _speedup(stdlib_ms: float, agentic_ms: float) -> str:
+    """Wall-clock ratio. >1 = agentic faster, <1 = agentic slower."""
+    if agentic_ms <= 0:
+        return "n/a"
+    r = stdlib_ms / agentic_ms
+    return f"{r:.2f}x" if r >= 1 else f"{1 / r:.2f}x slower"
+
+
+def time_workflow(stdlib_path: Path, agentic_dir: Path, context: int = 5, runs: int = 5) -> int:
+    """Time the 3-step health-check on both corpora (tool-execution wall-clock).
+
+    AgenticLogger side: real CLI subprocess (what an agent invokes).
+    Stdlib side: real ``grep`` subprocess (best-case stdlib tooling) producing the
+      same text the token measurement counts.
+
+    @spec-invariant: Does NOT count LLM ingestion time — that is token-bound and
+      already reported by measure(); it scales with the token ratio (~96% lower).
+    """
+    a_stats = _run_agentic(agentic_dir, ["stats", "--group-by", "error_code"])
+    top = _parse_top_error_code(a_stats)
+    if top is None:
+        print("No error codes found in agentic corpus; cannot time.", file=sys.stderr)
+        return 1
+    det = _run_agentic(agentic_dir, ["query", "--error-code", top, "--level", "ERROR",
+                                     "--format", "jsonl", "--limit", "1"])
+    rid = _parse_first_rid(det)
+    if rid is None:
+        print("Could not resolve a trace rid; cannot time.", file=sys.stderr)
+        return 1
+
+    env = {**os.environ, "AGENTIC_SELF_LOG": "0"}
+    prefix = _agentic_prefix() + ["--log-dir", str(agentic_dir)]
+    sf = str(stdlib_path)
+
+    rows = [
+        ("1. error distribution",
+         _time_ms(["grep", "levelname=ERROR ", sf], None, runs),
+         _time_ms(prefix + ["stats", "--group-by", "error_code"], env, runs)),
+        (f"2. drill top error ({top})",
+         _time_ms(["grep", f"-B{context}", f"-A{context}", top, sf], None, runs),
+         _time_ms(prefix + ["query", "--error-code", top, "--limit", "100"], env, runs)),
+        (f"3. trace one request (rid {rid[:8]})",
+         _time_ms(["grep", f"request_id={rid}", sf], None, runs),
+         _time_ms(prefix + ["trace", "--rid", rid], env, runs)),
+    ]
+    tot_s = sum(r[1] for r in rows)
+    tot_a = sum(r[2] for r in rows)
+
+    print(f"=== Tool-Execution Wall-Clock (median of {runs} runs) ===")
+    print(f"{'Step':<38} {'stdlib ms':>10} {'agentic ms':>11} {'ratio':>14}")
+    print("-" * 76)
+    for name, s, a in rows:
+        print(f"{name:<38} {s:>10.1f} {a:>11.1f} {_speedup(s, a):>14}")
+    print("-" * 76)
+    print(f"{'TOTAL':<38} {tot_s:>10.1f} {tot_a:>11.1f} {_speedup(tot_s, tot_a):>14}")
+    print()
+    print("NOTE: this is tool-execution time only (process spawn + scan).")
+    print("      LLM ingestion time is token-bound -> ~same ratio as token saving (~96% lower).")
+    return 0
+
+
+# ------------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------------
 def cmd_generate(args: argparse.Namespace) -> int:
