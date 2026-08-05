@@ -17,11 +17,11 @@ from agentic_logger.storage.jsonl import JSONLBackend
 
 def _compact_entries() -> list[dict]:
     return [
-        {"l": "INFO", "n": "scraper.rss", "m": "ok", "r": "r1", "p": "1", "q": 1},
-        {"l": "INFO", "n": "scraper.rss", "m": "ok", "r": "r2", "p": "1", "q": 2},
-        {"l": "ERROR", "n": "storage.graph", "m": "depth", "e": "FRONTMATTER_TOO_DEEP", "r": "r1", "p": "1", "q": 3},
-        {"l": "ERROR", "n": "http.client", "m": "timeout", "e": "NET_TIMEOUT", "r": "r2", "p": "2", "q": 1},
-        {"l": "TOOL", "n": "http.client", "m": "Tool http succeeded", "o": "http",
+        {"t": "2026-07-28T00:00:01.000+00:00", "l": "INFO", "n": "scraper.rss", "m": "ok", "r": "r1", "p": "1", "q": 1},
+        {"t": "2026-07-28T00:00:02.000+00:00", "l": "INFO", "n": "scraper.rss", "m": "ok", "r": "r2", "p": "1", "q": 2},
+        {"t": "2026-07-28T00:00:03.000+00:00", "l": "ERROR", "n": "storage.graph", "m": "depth", "e": "FRONTMATTER_TOO_DEEP", "r": "r1", "p": "1", "q": 3},
+        {"t": "2026-07-28T00:00:04.000+00:00", "l": "ERROR", "n": "http.client", "m": "timeout", "e": "NET_TIMEOUT", "r": "r2", "p": "2", "q": 1},
+        {"t": "2026-07-28T00:00:05.000+00:00", "l": "TOOL", "n": "http.client", "m": "Tool http succeeded", "o": "http",
          "c": "GET /", "x": 0, "d": 50, "r": "r1", "p": "1", "q": 4},
     ]
 
@@ -29,13 +29,13 @@ def _compact_entries() -> list[dict]:
 def _full_entries() -> list[dict]:
     """Same data as _compact_entries but with full field names."""
     return [
-        {"level": "INFO", "module": "scraper.rss", "msg": "ok", "rid": "r1", "pid": "1", "seq": 1},
-        {"level": "INFO", "module": "scraper.rss", "msg": "ok", "rid": "r2", "pid": "1", "seq": 2},
-        {"level": "ERROR", "module": "storage.graph", "msg": "depth",
+        {"ts": "2026-07-28T00:00:01.000+00:00", "level": "INFO", "module": "scraper.rss", "msg": "ok", "rid": "r1", "pid": "1", "seq": 1},
+        {"ts": "2026-07-28T00:00:02.000+00:00", "level": "INFO", "module": "scraper.rss", "msg": "ok", "rid": "r2", "pid": "1", "seq": 2},
+        {"ts": "2026-07-28T00:00:03.000+00:00", "level": "ERROR", "module": "storage.graph", "msg": "depth",
          "error_code": "FRONTMATTER_TOO_DEEP", "rid": "r1", "pid": "1", "seq": 3},
-        {"level": "ERROR", "module": "http.client", "msg": "timeout",
+        {"ts": "2026-07-28T00:00:04.000+00:00", "level": "ERROR", "module": "http.client", "msg": "timeout",
          "error_code": "NET_TIMEOUT", "rid": "r2", "pid": "2", "seq": 1},
-        {"level": "TOOL", "module": "http.client", "msg": "Tool http succeeded", "tool": "http",
+        {"ts": "2026-07-28T00:00:05.000+00:00", "level": "TOOL", "module": "http.client", "msg": "Tool http succeeded", "tool": "http",
          "cmd": "GET /", "exit": 0, "dur": 50, "rid": "r1", "pid": "1", "seq": 4},
     ]
 
