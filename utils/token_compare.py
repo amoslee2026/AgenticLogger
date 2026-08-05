@@ -520,16 +520,16 @@ def _load_dotenv(path: str = _DOTENV_PATH) -> None:
             os.environ[k] = v
 
 
-def _llm_ttft(endpoint: str, key: str, model: str, text: str, runs: int = 3) -> float | None:
-    """Median time-to-first-token (ms) ingesting *text* via an OpenAI-compatible
-    chat/completions endpoint (streaming, max_tokens=3).
+def _llm_ttft_once(endpoint: str, key: str, model: str, text: str) -> float | None:
+    """One time-to-first-token (ms) measurement ingesting *text* via an
+    OpenAI-compatible chat/completions endpoint (streaming, max_tokens=3).
 
     TTFT ≈ network RTT + prefill(ingestion) + queue. Output is capped to 3 tokens so
-    decode cost is negligible — the measured time is dominated by moving and reading
-    the input. Returns None on a persistent error.
+    decode cost is negligible. Returns None on error.
 
-    @spec-why: A real remote API keeps network latency in the measurement (it is a
-      genuine cost an agent pays every round-trip), unlike a local model.
+    @spec-why: Callers interleave stdlib/agentic calls and take the median so
+      endpoint queueing / rate-limit bursts — which on shared coding-plan endpoints
+      can add seconds of order-dependent noise — hit both sides equally.
     """
     url = endpoint.rstrip("/") + "/chat/completions"
     payload = json.dumps({
@@ -539,26 +539,25 @@ def _llm_ttft(endpoint: str, key: str, model: str, text: str, runs: int = 3) -> 
         "stream": True,
     }).encode()
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    times: list[float] = []
-    last_err = ""
-    for _ in range(runs):
-        req = urllib.request.Request(url, data=payload, headers=headers)
-        t0 = time.perf_counter()
-        try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                for raw in resp:
-                    s = raw.decode("utf-8", errors="ignore").strip()
-                    if s.startswith("data:") and "[DONE]" not in s:
-                        times.append((time.perf_counter() - t0) * 1000.0)
-                        break
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
-            last_err = str(e)
-            continue
-    if not times:
-        print(f"  [warn] LLM call failed ({model}): {last_err[:120]}", file=sys.stderr)
+    req = urllib.request.Request(url, data=payload, headers=headers)
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            for raw in resp:
+                s = raw.decode("utf-8", errors="ignore").strip()
+                if s.startswith("data:") and "[DONE]" not in s:
+                    return (time.perf_counter() - t0) * 1000.0
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+        print(f"  [warn] LLM call failed ({model}): {str(e)[:120]}", file=sys.stderr)
         return None
-    times.sort()
-    return times[len(times) // 2]
+    return None
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    values = sorted(values)
+    return values[len(values) // 2]
 
 
 def llmtime(stdlib_path: Path, agentic_dir: Path, endpoint: str, key: str,
