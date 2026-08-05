@@ -537,28 +537,6 @@ def cmd_timeit(args: argparse.Namespace) -> int:
     return time_workflow(stdlib_path, agentic_dir, context=args.context, runs=args.runs)
 
 
-def cmd_llmtime(args: argparse.Namespace) -> int:
-    """Measure real LLM ingestion time via a remote API + combined tool time."""
-    _load_dotenv()
-    endpoint = args.endpoint or os.environ.get("BAILIAN_OPENAI_URL")
-    key = args.apikey or os.environ.get("BAILIAN_APIKEY")
-    if not (endpoint and key):
-        print("error: need --endpoint/--apikey or BAILIAN_OPENAI_URL/BAILIAN_APIKEY "
-              "in ~/shared/common/.env", file=sys.stderr)
-        return 2
-    if args.n is not None:
-        stdlib_path, agentic_dir, _ = generate_corpus(
-            args.out, args.n, args.seed, args.error_rate, args.warn_rate)
-    else:
-        if not args.stdlib or not args.agentic:
-            print("error: provide --n (generate) or both --stdlib and --agentic",
-                  file=sys.stderr)
-            return 2
-        stdlib_path, agentic_dir = Path(args.stdlib), Path(args.agentic)
-    return llmtime(stdlib_path, agentic_dir, endpoint, key, args.model,
-                   context=args.context, runs=args.runs)
-
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="token_compare",
