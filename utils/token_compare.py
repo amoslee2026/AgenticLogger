@@ -508,6 +508,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     return measure(stdlib_path, agentic_dir, context=args.context)
 
 
+def cmd_timeit(args: argparse.Namespace) -> int:
+    """Generate (if --n) or reuse a corpus, then time the workflow per step."""
+    if args.n is not None:
+        stdlib_path, agentic_dir, _ = generate_corpus(
+            args.out, args.n, args.seed, args.error_rate, args.warn_rate)
+    else:
+        if not args.stdlib or not args.agentic:
+            print("error: provide --n (generate fresh) or both --stdlib and --agentic",
+                  file=sys.stderr)
+            return 2
+        stdlib_path, agentic_dir = Path(args.stdlib), Path(args.agentic)
+    return time_workflow(stdlib_path, agentic_dir, context=args.context, runs=args.runs)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="token_compare",
