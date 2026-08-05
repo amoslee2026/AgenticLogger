@@ -735,6 +735,23 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--runs", type=int, default=5, help="Timed runs per step (median)")
     t.set_defaults(func=cmd_timeit)
 
+    lt = sub.add_parser("llmtime",
+                        help="Measure real LLM ingestion time (remote API) + tool time")
+    lt.add_argument("--n", type=int, default=None,
+                    help="Generate fresh corpus of N events (omit to reuse --stdlib/--agentic)")
+    lt.add_argument("--out", default="./temp/token_compare", help="Output dir (with --n)")
+    lt.add_argument("--seed", type=int, default=20260728)
+    lt.add_argument("--error-rate", type=float, default=0.001)
+    lt.add_argument("--warn-rate", type=float, default=0.001)
+    lt.add_argument("--stdlib", help="Existing stdlib .log path")
+    lt.add_argument("--agentic", help="Existing agentic log dir")
+    lt.add_argument("--context", type=int, default=5, help="Stdlib drill context lines (default 5)")
+    lt.add_argument("--runs", type=int, default=3, help="LLM timed runs per step (median)")
+    lt.add_argument("--model", default="qwen3.5-plus", help="Bailian model (default qwen3.5-plus)")
+    lt.add_argument("--endpoint", help="Override OpenAI-compatible base URL")
+    lt.add_argument("--apikey", help="Override API key")
+    lt.set_defaults(func=cmd_llmtime)
+
     return p
 
 
