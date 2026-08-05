@@ -197,6 +197,8 @@ def generate_corpus(out_dir: str | Path, n: int, seed: int,
 
     @spec-invariant: Does NOT clear --out; existing files are left untouched.
     """
+    import sys as _s
+    print("DBG path0=", _s.path[0], "pkg=", str(_PKG_SRC), "cached=", [m for m in _s.modules if m == "agentic_logger"], _s.modules.get("agentic_logger"), file=_s.stderr)
     from agentic_logger import AgentLogger  # type: ignore[no-redef]
 
     out = Path(out_dir)
