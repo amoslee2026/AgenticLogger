@@ -494,6 +494,137 @@ def time_workflow(stdlib_path: Path, agentic_dir: Path, context: int = 5, runs: 
 
 
 # ------------------------------------------------------------------
+# LLM ingestion timing — real remote API TTFT (network latency included).
+# ------------------------------------------------------------------
+_DOTENV_PATH = "~/shared/common/.env"
+
+
+def _load_dotenv(path: str = _DOTENV_PATH) -> None:
+    """Load KEY=VALUE lines from *path* into os.environ (without executing).
+
+    @spec-why: ``source ~/shared/common/.env`` errors on malformed lines (paths with
+      spaces, unquoted values); this parser reads safely and only sets unset vars.
+    @spec-invariant: Never overwrites an already-set env var (CLI/parent wins).
+    """
+    p = Path(path).expanduser()
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
+def _llm_ttft(endpoint: str, key: str, model: str, text: str, runs: int = 3) -> float | None:
+    """Median time-to-first-token (ms) ingesting *text* via an OpenAI-compatible
+    chat/completions endpoint (streaming, max_tokens=3).
+
+    TTFT ≈ network RTT + prefill(ingestion) + queue. Output is capped to 3 tokens so
+    decode cost is negligible — the measured time is dominated by moving and reading
+    the input. Returns None on a persistent error.
+
+    @spec-why: A real remote API keeps network latency in the measurement (it is a
+      genuine cost an agent pays every round-trip), unlike a local model.
+    """
+    url = endpoint.rstrip("/") + "/chat/completions"
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": text + "\n\nReply with exactly: OK"}],
+        "max_tokens": 3,
+        "stream": True,
+    }).encode()
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    times: list[float] = []
+    last_err = ""
+    for _ in range(runs):
+        req = urllib.request.Request(url, data=payload, headers=headers)
+        t0 = time.perf_counter()
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                for raw in resp:
+                    s = raw.decode("utf-8", errors="ignore").strip()
+                    if s.startswith("data:") and "[DONE]" not in s:
+                        times.append((time.perf_counter() - t0) * 1000.0)
+                        break
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+            last_err = str(e)
+            continue
+    if not times:
+        print(f"  [warn] LLM call failed ({model}): {last_err[:120]}", file=sys.stderr)
+        return None
+    times.sort()
+    return times[len(times) // 2]
+
+
+def llmtime(stdlib_path: Path, agentic_dir: Path, endpoint: str, key: str,
+            model: str, context: int = 5, runs: int = 3) -> int:
+    """Measure real LLM ingestion time (remote API, network incl.) per step and
+    combine with tool-execution time -> total agent wall-clock per side.
+    """
+    try:
+        cap = capture_workflow(stdlib_path, agentic_dir, context=context)
+    except RuntimeError as e:
+        print(f"{e}; cannot measure.", file=sys.stderr)
+        return 1
+    top, rid = cap["top"], cap["rid"]
+
+    steps = [
+        ("1. error distribution", cap["s1"], cap["a1"]),
+        (f"2. drill top error ({top})", cap["s2"], cap["a2"]),
+        (f"3. trace one request (rid {rid[:8]})", cap["s3"], cap["a3"]),
+    ]
+
+    # Tool-execution times per step (stdlib grep vs agentic CLI), 1 run each.
+    env0 = {**os.environ, "AGENTIC_SELF_LOG": "0"}
+    prefix = _agentic_prefix() + ["--log-dir", str(agentic_dir)]
+    sf = str(stdlib_path)
+    tool_cmds = [
+        (["grep", "levelname=ERROR ", sf], prefix + ["stats", "--group-by", "error_code"]),
+        (["grep", f"-B{context}", f"-A{context}", top, sf], prefix + ["query", "--error-code", top, "--limit", "100"]),
+        (["grep", f"request_id={rid}", sf], prefix + ["trace", "--rid", rid]),
+    ]
+
+    print(f"=== LLM Ingestion TTFT via {model} (median of {runs}, network incl.) ===")
+    print(f"endpoint: {endpoint}")
+    print(f"{'Step':<34}{'std tok':>9}{'ag tok':>9}{'std ms':>10}{'ag ms':>10}{'LLM save':>10}")
+    print("-" * 82)
+    tot_s_tok = tot_a_tok = 0
+    tot_s_llm = tot_a_llm = 0.0
+    tot_s_tool = tot_a_tool = 0.0
+    for (name, s_text, a_text), (s_cmd, a_cmd) in zip(steps, tool_cmds):
+        s_tok, a_tok = count_tokens(s_text), count_tokens(a_text)
+        s_llm = _llm_ttft(endpoint, key, model, s_text, runs)
+        a_llm = _llm_ttft(endpoint, key, model, a_text, runs)
+        s_tool = _time_ms(s_cmd, None, 1)
+        a_tool = _time_ms(a_cmd, env0, 1)
+        save = _savings(s_llm, a_llm) if (s_llm and a_llm) else "n/a"
+        print(f"{name:<34}{s_tok:>9}{a_tok:>9}"
+              f"{(s_llm or 0):>10.0f}{(a_llm or 0):>10.0f}{str(save):>10}")
+        tot_s_tok += s_tok; tot_a_tok += a_tok
+        tot_s_llm += s_llm or 0; tot_a_llm += a_llm or 0
+        tot_s_tool += s_tool; tot_a_tool += a_tool
+    print("-" * 82)
+    print(f"{'TOTAL':<34}{tot_s_tok:>9}{tot_a_tok:>9}"
+          f"{tot_s_llm:>10.0f}{tot_a_llm:>10.0f}{_savings(tot_s_llm, tot_a_llm):>10}")
+    print()
+
+    # Combined real wall-clock = tool execution + LLM ingestion.
+    s_total = tot_s_tool + tot_s_llm
+    a_total = tot_a_tool + tot_a_llm
+    print("=== Combined agent wall-clock: tool-execution + LLM-ingestion ===")
+    print(f"  stdlib : tool {tot_s_tool/1000:6.2f}s + LLM {tot_s_llm/1000:6.2f}s = {s_total/1000:6.2f}s")
+    print(f"  agentic: tool {tot_a_tool/1000:6.2f}s + LLM {tot_a_llm/1000:6.2f}s = {a_total/1000:6.2f}s")
+    print(f"  total time saving: {_savings(s_total, a_total)}")
+    print(f"  (agentic's tool cost is Python-CLI startup; an MCP server drops it to ~0.)")
+    return 0
+
+
+# ------------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------------
 def cmd_generate(args: argparse.Namespace) -> int:
