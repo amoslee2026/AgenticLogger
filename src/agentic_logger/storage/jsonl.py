@@ -453,6 +453,38 @@ class JSONLBackend:
             "max_ts": max(tss).decode("utf-8", "ignore"),
         }
 
+    def tail(self, n: int = 100) -> list[dict]:
+        """Return the last *n* entries by reading a bounded chunk from the file end.
+
+        O(n) — no full scan. File order tracks ts order under the single-writer
+        invariant; callers needing strict ts order should sort the result.
+
+        @spec-why: ``query(limit=n)`` with no filter scans the whole file; ``tail``
+          semantics only need the most recent entries, so seek from the end. This
+          matters especially for ``tail --follow`` which otherwise re-scans every poll.
+        @last-changed: 2026-08-05
+        """
+        if not self.file_path.exists():
+            return []
+        size = self.file_path.stat().st_size
+        # avg ~200 B/entry; pad so n entries comfortably fit in the chunk.
+        chunk = min(size, max(n * 512, 8192))
+        with open(self.file_path, "rb") as f:
+            if size > chunk:
+                f.seek(-chunk, os.SEEK_END)
+            data = f.read()
+        lines = data.splitlines()
+        if size > chunk and lines:
+            lines = lines[1:]  # first line is partial (seek landed mid-line)
+        out: list[dict] = []
+        for line_b in lines[-n:]:
+            try:
+                entry = json.loads(line_b)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            out.append(_maybe_expand(entry))
+        return out
+
     # ------------------------------------------------------------------
     # Internal — Circular Rotation
     # ------------------------------------------------------------------
