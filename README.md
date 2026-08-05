@@ -18,6 +18,24 @@ logger.error("Build failed", module="build.compile", error_code=ErrorCode.EXEC_N
 
 Log file: `./logs/my_agent_build_20260721_133834090719.jsonl`
 
+## Case Study: Real-World Deployment
+
+A multi-process information aggregation pipeline (scrapers → LLM extraction → knowledge graph) migrated from stdlib `logging` to AgenticLogger. Observed over 24h with ~100K entries / 180 MB:
+
+| Dimension | stdlib `logging` | AgenticLogger |
+|---|---|---|
+| Per-entry size | ~150–300 bytes | ~80–120 bytes (**~40–50% smaller**) |
+| LLM token cost | Raw-text formatting overhead | **TSV output ~46% smaller than JSONL** |
+| Cross-process tracing | Manual timestamp correlation | `trace --rid` walks call chains across files |
+| Aggregation | Hand-rolled `awk` | `stats --group-by error_code/module/tool` |
+| Third-party logs (httpx/urllib3/...) | Each library logs independently | Unified into one JSONL via `_StdLogForwardingHandler` |
+
+**Outcome**: `stats --group-by error_code` immediately surfaced a real bug — `FRONTMATTER_TOO_DEEP` (metadata nesting exceeded the storage backend's depth limit) across 57 ERROR entries — diagnosed in a single LLM turn instead of multi-step `grep` chains.
+
+**Verdict**: Not substitutes. For **human** consumers, stdlib + ELK/Grafana remains more mature (zero-dependency, plain-text `tail -f`). For **agent/LLM** consumers, AgenticLogger's token savings, structured queries, and cross-process trace are decisive — roughly an order of magnitude fewer tokens for log-driven diagnosis.
+
+→ Full report: [docs/case-studies/agenticlogger-vs-stdlib-logging.md](docs/case-studies/agenticlogger-vs-stdlib-logging.md)
+
 ## Installation
 
 For detailed installation instructions, see [Installation Guide](docs/INSTALLATION.md).
