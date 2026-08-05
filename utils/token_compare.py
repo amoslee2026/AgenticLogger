@@ -207,22 +207,36 @@ def generate_corpus(out_dir: str | Path, n: int, seed: int,
                     error_rate: float, warn_rate: float) -> tuple[Path, Path, int]:
     """Generate dual-format corpus. Returns (stdlib_path, agentic_dir, n_events).
 
-    @spec-invariant: Does NOT clear --out; existing files are left untouched.
+    Clears only the OWNED artifacts (``app.log`` and the ``agentic/`` subdir) so
+    repeat runs to the same --out don't accumulate timestamped JSONL files (which
+    would double-count in queries). Stale files are moved to ``./temp/deleted/``
+    (recoverability rule: mv, never rm).
+
+    @spec-invariant: Does NOT touch files it did not create.
     """
     from agentic_logger import AgentLogger
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    deleted = Path("./temp/deleted")
+    deleted.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+    stdlib_path = out / "app.log"
+    agentic_dir = out / "agentic"
+    if stdlib_path.exists():
+        shutil.move(str(stdlib_path), str(deleted / f"app_{stamp}.log"))
+    if agentic_dir.exists():
+        shutil.move(str(agentic_dir), str(deleted / f"agentic_{stamp}"))
+    agentic_dir.mkdir(exist_ok=True)
+
     rng = random.Random(seed)
     events = _gen_events(n, rng, error_rate, warn_rate)
 
-    stdlib_path = out / "app.log"
     with stdlib_path.open("w", encoding="utf-8") as f:
         for ev in events:
             f.write(_render_stdlib_line(ev) + "\n")
 
-    agentic_dir = out / "agentic"
-    agentic_dir.mkdir(exist_ok=True)
     logger = AgentLogger(program="bench", command="run", log_dir=agentic_dir,
                          storage="jsonl", compact=True)
     for ev in events:
