@@ -120,12 +120,16 @@ def _merge_query(
     order_by = filters.pop("order_by", "ts_desc")
 
     candidates = []
+    # Time-range pruning only matters when a since/until filter is set; skip the
+    # (now byte-level but still non-zero) get_time_range scan otherwise.
+    need_range = since is not None or until is not None
     for b in backends:
-        tr = b.get_time_range()
-        if tr and since and tr.get("max_ts") and tr["max_ts"] < since:
-            continue
-        if tr and until and tr.get("min_ts") and tr["min_ts"] > until:
-            continue
+        if need_range:
+            tr = b.get_time_range()
+            if tr and since and tr.get("max_ts") and tr["max_ts"] < since:
+                continue
+            if tr and until and tr.get("min_ts") and tr["min_ts"] > until:
+                continue
         candidates.append(b)
 
     # Fetch all matching entries from each candidate (generous limit per backend)
