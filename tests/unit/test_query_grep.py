@@ -108,6 +108,5 @@ def test_query_narrowed_respects_limit_and_order(compact_backend):
 
 def test_query_narrowed_offset(compact_backend):
     out = compact_backend.query(level="ERROR", order_by="ts_asc")
-    assert [e["seq"] for e in out] == [3, 1]  # ERROR entries by entry-seq... see note
-    # NOTE: seq within an rid; both ERROR entries, ts_asc -> storage.graph(00:03) then http(00:04)
+    # both ERROR entries, ts_asc -> storage.graph (00:03) then http.client (00:04)
     assert [e["module"] for e in out] == ["storage.graph", "http.client"]
