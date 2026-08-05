@@ -359,7 +359,7 @@ def measure(stdlib_path: Path, agentic_dir: Path, context: int = 5) -> int:
     lines = Path(stdlib_path).read_text(encoding="utf-8", errors="ignore").splitlines()
     s_stats = _stdlib_error_lines(lines)
     s_query = _stdlib_grep(lines, top, context)
-    s_trace = _stdlib_grep(lines, f"req_id={rid}", 0)
+    s_trace = _stdlib_grep(lines, f"request_id={rid}", 0)
 
     rows = [
         (f"1. error distribution", count_tokens(s_stats), count_tokens(a_stats)),
