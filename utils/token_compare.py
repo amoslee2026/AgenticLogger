@@ -197,7 +197,7 @@ def generate_corpus(out_dir: str | Path, n: int, seed: int,
 
     @spec-invariant: Does NOT clear --out; existing files are left untouched.
     """
-    from agentic_logger import AgentLogger
+    from agentic_logger import AgentLogger  # type: ignore[no-redef]
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
