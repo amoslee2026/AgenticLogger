@@ -627,11 +627,35 @@ def llmtime(stdlib_path: Path, agentic_dir: Path, endpoint: str, key: str,
     # Combined real wall-clock = tool execution + LLM ingestion.
     s_total = tot_s_tool + tot_s_llm
     a_total = tot_a_tool + tot_a_llm
+    # In-process SDK calls (≈ MCP server path): same work as the CLI but without the
+    # per-call Python interpreter startup. Shows the CLI startup tax is the issue.
+    inproc_total = None
+    try:
+        from agentic_logger.mcp_server import handle_query, handle_stats, handle_trace
+
+        def _t(fn, **kw):
+            t0 = time.perf_counter(); fn(agentic_dir, **kw); return (time.perf_counter() - t0) * 1000
+
+        inproc_total = (
+            _median([_t(handle_stats, group_by="error_code") for _ in range(3)])
+            + _median([_t(handle_query, error_code=top, limit=100) for _ in range(3)])
+            + _median([_t(handle_trace, rid=rid) for _ in range(3)])
+        )
+    except Exception as e:
+        print(f"  [warn] in-process SDK timing unavailable: {e}", file=sys.stderr)
+
     print("=== Combined agent wall-clock: tool-execution + LLM-ingestion ===")
-    print(f"  stdlib : tool {tot_s_tool/1000:6.2f}s + LLM {tot_s_llm/1000:6.2f}s = {s_total/1000:6.2f}s")
-    print(f"  agentic: tool {tot_a_tool/1000:6.2f}s + LLM {tot_a_llm/1000:6.2f}s = {a_total/1000:6.2f}s")
-    print(f"  total time saving: {_savings(s_total, a_total)}")
-    print(f"  (agentic's tool cost is Python-CLI startup; an MCP server drops it to ~0.)")
+    print(f"  stdlib (grep)        : tool {tot_s_tool/1000:6.2f}s + LLM {tot_s_llm/1000:6.2f}s = {s_total/1000:6.2f}s")
+    print(f"  agentic (CLI subprocess): tool {tot_a_tool/1000:6.2f}s + LLM {tot_a_llm/1000:6.2f}s = {a_total/1000:6.2f}s")
+    if inproc_total is not None:
+        a_mcp = inproc_total + tot_a_llm
+        print(f"  agentic (MCP / in-proc): tool {inproc_total/1000:6.2f}s + LLM {tot_a_llm/1000:6.2f}s = {a_mcp/1000:6.2f}s")
+        print(f"  total time saving (stdlib -> agentic-MCP): {_savings(s_total, a_mcp)}")
+    else:
+        print(f"  total time saving (stdlib -> agentic-CLI): {_savings(s_total, a_total)}")
+    print("  NOTE: CLI tool cost is Python interpreter startup x N calls; the MCP server")
+    print("  (persistent process) removes it, leaving only the query work — which is what")
+    print("  the in-process row measures.")
     return 0
 
 
