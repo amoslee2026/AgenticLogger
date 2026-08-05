@@ -47,7 +47,8 @@ _LEVELS: tuple[str, ...] = (
     "INFO", "WARN", "ERROR", "TOOL", "FILE_OP", "DECISION", "CODE_GEN", "CONTEXT", "DEBUG",
 )
 # Fields stored as unquoted JSON numbers — stats() uses a different capture pattern.
-_NUMERIC_KEYS: frozenset[str] = frozenset({"pid", "seq", "dur", "exit", "size"})
+# NOTE: pid is excluded — it is stored as a quoted string (str(os.getpid())).
+_NUMERIC_KEYS: frozenset[str] = frozenset({"seq", "dur", "exit", "size"})
 
 
 def _maybe_expand(entry: dict) -> dict:
