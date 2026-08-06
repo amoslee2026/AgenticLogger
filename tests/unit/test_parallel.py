@@ -64,7 +64,8 @@ def test_stats_parallel_total(multifile_dir, monkeypatch):
 
 def test_query_parallel_matches_sequential(multifile_dir, monkeypatch):
     def msgs():
-        return sorted(e["msg"] for e in handle_query(multifile_dir, level="ERROR", limit=100000))
+        result = handle_query(multifile_dir, level="ERROR", limit=100000)
+        return sorted(e["msg"] for e in result["logs"])
 
     monkeypatch.delenv("AGENTIC_PARALLEL_WORKERS", raising=False)
     par = msgs()
