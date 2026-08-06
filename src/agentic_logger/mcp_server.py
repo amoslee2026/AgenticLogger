@@ -237,10 +237,16 @@ def _merge_query(
                 continue
         candidates.append(b)
 
-    # Fetch all matching entries from each candidate (generous limit per backend)
-    all_results = []
-    for b in candidates:
-        all_results.extend(b.query(since=since, until=until, limit=100000, **filters))
+    # Fetch all matching entries from each candidate (generous limit per backend).
+    all_results: list[dict] = []
+    if len(candidates) >= _PARALLEL_THRESHOLD and _parallel_pool() is not None:
+        pool = _parallel_pool()
+        wargs = [(b.file_path, since, until, filters) for b in candidates]
+        for part in pool.map(_query_worker, wargs):
+            all_results.extend(part)
+    else:
+        for b in candidates:
+            all_results.extend(b.query(since=since, until=until, limit=100000, **filters))
 
     # Sort
     reverse = order_by != "ts_asc"
