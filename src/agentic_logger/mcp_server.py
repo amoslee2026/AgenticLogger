@@ -104,6 +104,93 @@ def _load_all_backends(log_dir: Path) -> list[JSONLBackend | SQLiteBackend]:
     return backends
 
 
+# ------------------------------------------------------------------
+# Multi-file parallelism — process pool for fan-out reads.
+# ------------------------------------------------------------------
+# Threads don't help (GIL blocks the C-level re/bytes scan); a process pool does
+# (~5x on stats across 8 files, measured). It only pays off with a PERSISTENT
+# pool (MCP server); a one-shot CLI barely breaks even on pool spawn, so the
+# threshold gate keeps small/single-file work sequential. Disable with
+# AGENTIC_PARALLEL_WORKERS=0.
+_PARALLEL_THRESHOLD = 3
+_pool: ProcessPoolExecutor | None = None
+_pool_lock = threading.Lock()
+
+
+def _parallel_pool() -> ProcessPoolExecutor | None:
+    """Lazy persistent process pool, or None if disabled / not worth it.
+
+    @spec-why: Per-file fan-out scans each worker's OWN file locally — only small
+      results cross the IPC boundary, so ProcessPool beats the GIL-bound thread
+      alternative. Lives for the process (MCP = many queries; CLI = one query).
+    """
+    if os.environ.get("AGENTIC_PARALLEL_WORKERS", "") == "0":
+        return None
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                workers = min(os.cpu_count() or 4, 16)
+                _pool = ProcessPoolExecutor(max_workers=workers)
+                atexit.register(_shutdown_pool)
+    return _pool
+
+
+def _shutdown_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.shutdown(wait=False)
+        _pool = None
+
+
+def _backend_for(file_path: Path):
+    """Construct the backend for *file_path* by extension (worker-side, picklable).
+
+    Workers receive a Path (not a backend object) so no file handle or SQLite
+    connection is inherited across fork — each worker opens its own.
+    """
+    p = Path(file_path)
+    if p.suffix == ".sqlite":
+        return SQLiteBackend(file_path=p)
+    return JSONLBackend(file_path=p)
+
+
+def _stats_worker(args: tuple) -> dict:
+    """Worker: aggregate one file by group_by. Returns dict(value -> count)."""
+    file_path, group_by, since, until, rid = args
+    b = _backend_for(Path(file_path))
+    stats_fn = getattr(b, "stats", None)
+    if stats_fn is not None:
+        return dict(stats_fn(group_by, since=since, until=until, rid=rid))
+    # Backends without native stats(): query + Counter fallback.
+    c: Counter = Counter()
+    for e in b.query(since=since, until=until, rid=rid, limit=100000):
+        if e.get("level") == "__GLOBAL_CTX__":
+            continue
+        c[str(e.get(group_by, "unknown"))] += 1
+    return dict(c)
+
+
+def _query_worker(args: tuple) -> list[dict]:
+    """Worker: query one file, return matching entries."""
+    file_path, since, until, filters = args
+    b = _backend_for(Path(file_path))
+    return b.query(since=since, until=until, limit=100000, **filters)
+
+
+def _merge_counts(per_file: list[dict]) -> tuple[dict[str, int], int]:
+    """Merge per-file count dicts into (groups, total), dropping empty/global-ctx."""
+    groups: dict[str, int] = {}
+    total = 0
+    for c in per_file:
+        for k, v in c.items():
+            if not v or k == "__GLOBAL_CTX__":
+                continue
+            groups[k] = groups.get(k, 0) + v
+            total += v
+    return groups, total
+
+
 def _merge_query(
     backends: list[JSONLBackend],
     since: str | None = None,
