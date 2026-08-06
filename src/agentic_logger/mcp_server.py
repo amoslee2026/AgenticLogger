@@ -617,24 +617,28 @@ def handle_stats(
     since_iso = _resolve_time(since)
     until_iso = _resolve_time(until)
 
-    groups: dict[str, int] = {}
-    total = 0
-    for b in backends:
-        stats_fn = getattr(b, "stats", None)
-        if stats_fn is None:
-            # Generic fallback for backends without native aggregation.
-            for e in b.query(since=since_iso, until=until_iso, rid=rid, limit=100000):
-                if e.get("level") == "__GLOBAL_CTX__":
-                    continue
-                k = str(e.get(group_by, "unknown"))
-                groups[k] = groups.get(k, 0) + 1
-                total += 1
-        else:
-            for k, v in stats_fn(group_by, since=since_iso, until=until_iso, rid=rid).items():
-                if not v or k == "__GLOBAL_CTX__":
-                    continue
-                groups[k] = groups.get(k, 0) + v
-                total += v
+    pool = _parallel_pool() if len(backends) >= _PARALLEL_THRESHOLD else None
+    if pool is not None:
+        args = [(b.file_path, group_by, since_iso, until_iso, rid) for b in backends]
+        groups, total = _merge_counts(pool.map(_stats_worker, args))
+    else:
+        groups, total = {}, 0
+        for b in backends:
+            stats_fn = getattr(b, "stats", None)
+            if stats_fn is None:
+                # Generic fallback for backends without native aggregation.
+                for e in b.query(since=since_iso, until=until_iso, rid=rid, limit=100000):
+                    if e.get("level") == "__GLOBAL_CTX__":
+                        continue
+                    k = str(e.get(group_by, "unknown"))
+                    groups[k] = groups.get(k, 0) + 1
+                    total += 1
+            else:
+                for k, v in stats_fn(group_by, since=since_iso, until=until_iso, rid=rid).items():
+                    if not v or k == "__GLOBAL_CTX__":
+                        continue
+                    groups[k] = groups.get(k, 0) + v
+                    total += v
 
     sorted_groups = sorted(groups.items(), key=lambda x: x[1], reverse=True)
 
