@@ -52,3 +52,25 @@ spec/
 
 # Project CLAUDE.md
 CLAUDE.md
+
+# Serena 语义分析缓存
+.serena/
+
+# ── Cross-language SDK build artifacts ──
+# Rust
+sdks/rust/target/
+sdks/rust/logs/
+**/*.rs.bk
+# Go
+sdks/go/examples/emit
+sdks/go/**/debug
+*.test
+# TypeScript / JavaScript
+sdks/ts/node_modules/
+sdks/ts/dist/
+# SystemVerilog / Verilator
+sdks/systemverilog/obj_dir/
+sdks/systemverilog/agentic_logger_dpi.o
+sdks/systemverilog/*.o
+# Cross-lang test scratch
+tests/cross_lang/*.jsonl

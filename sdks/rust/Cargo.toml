@@ -1,0 +1,24 @@
+[package]
+name = "agentic-logger"
+version = "0.1.0"
+edition = "2021"
+authors = ["AgenticLogger contributors"]
+description = "Structured logging SDK for Coding Agents — byte-compatible JSONL with the AgenticLogger Python query layer"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/amoslee2026/AgenticLogger"
+homepage = "https://github.com/amoslee2026/AgenticLogger"
+keywords = ["logging", "agent", "jsonl", "structured-logging", "llm"]
+categories = ["development-tools::debugging"]
+exclude = ["logs/*", "target/*", "examples/*.jsonl"]
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["std"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+
+[lib]
+name = "agentic_logger"
+path = "src/lib.rs"

@@ -1,0 +1,54 @@
+name: SDK Cross-Language
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python (reference)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install uv
+        run: pip install uv
+      - name: Sync (dev + mcp extras)
+        run: uv sync --extra dev --extra mcp
+      - name: pytest
+        run: uv run pytest -q
+
+  sdks:
+    name: SDKs + cross-language interop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - name: Install verilator + gcc
+        run: sudo apt-get update && sudo apt-get install -y verilator gcc
+
+      # Reference Python package (for the query layer used by run_all.sh)
+      - name: Install uv + agentic_logger
+        run: |
+          pip install uv
+          uv sync --extra dev
+      # Rust toolchain ships on ubuntu-latest; keep it explicit.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust tests
+        run: cd sdks/rust && cargo test --quiet
+      - name: Go tests
+        run: cd sdks/go && go test ./...
+      - name: TS/JS tests
+        run: cd sdks/ts && bun test
+
+      - name: Cross-language interop (run_all.sh)
+        run: ./tests/cross_lang/run_all.sh

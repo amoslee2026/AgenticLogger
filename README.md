@@ -1,5 +1,7 @@
 # AgenticLogger
 
+![SDK Cross-Language](https://github.com/amoslee2026/AgenticLogger/actions/workflows/sdk-cross-lang.yml/badge.svg)
+
 **Structured logging for Coding Agents** — write once, read efficiently.
 
 AgenticLogger lets Coding Agents (Claude Code, Cursor, Copilot, etc.) emit structured logs that AI tools can query with minimal token overhead. Instead of parsing free-form text, agents read pre-structured JSON entries with indexed fields.
@@ -71,6 +73,35 @@ agentic-logger-mcp --help
 # Python SDK
 python -c "from agentic_logger import AgentLogger; print('OK')"
 ```
+
+## Multi-Language SDKs
+
+AgenticLogger ships write-side SDKs for **Bash, Rust, Go, TypeScript/JavaScript,
+and SystemVerilog/Verilog**. Every SDK emits the **same byte-compatible JSONL**,
+so logs written by any of them are read by the Python query layer (`cli` /
+`mcp_server`) with zero conversion.
+
+| SDK | Path | Artifact |
+|-----|------|---------|
+| Bash | [`sdks/bash`](sdks/bash) | `agentic_logger.sh` (sourceable) |
+| Rust | [`sdks/rust`](sdks/rust) | `agentic-logger` crate |
+| Go | [`sdks/go`](sdks/go) | `github.com/agenticlogger/agentic-logger-go` |
+| TypeScript / JavaScript | [`sdks/ts`](sdks/ts) | `agentic-logger` (npm, ESM + types) |
+| SystemVerilog / Verilog | [`sdks/systemverilog`](sdks/systemverilog) | `agentic_logger_pkg.sv` + DPI-C |
+
+The canonical byte-level contract that all SDKs share is
+[`sdks/INTERCHANGE.md`](sdks/INTERCHANGE.md). The key invariant: separators are
+`": "` and `", "` (matching Python `json.dumps`), `pid` is a string, numeric
+fields are unquoted, and non-ASCII is written as raw UTF-8 (no `\uXXXX`). This
+is what makes the Python `stats` byte-counter work across languages.
+
+Verify cross-language interop:
+
+```bash
+./tests/cross_lang/run_all.sh   # each SDK emits a sample → validated → read by Python CLI
+```
+
+See [`sdks/README.md`](sdks/README.md) for the API map and per-SDK install.
 
 ## User Guide
 
