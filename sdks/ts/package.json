@@ -1,0 +1,31 @@
+{
+  "name": "agentic-logger",
+  "version": "0.1.0",
+  "description": "Structured logging SDK for Coding Agents — byte-compatible JSONL with the AgenticLogger Python query layer",
+  "license": "MIT",
+  "author": "AgenticLogger contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amoslee2026/AgenticLogger.git",
+    "directory": "sdks/ts"
+  },
+  "homepage": "https://github.com/amoslee2026/AgenticLogger",
+  "bugs": "https://github.com/amoslee2026/AgenticLogger/issues",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["logging", "agent", "jsonl", "structured-logging", "llm"],
+  "engines": { "node": ">=18" }
+}
