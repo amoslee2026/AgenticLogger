@@ -27,5 +27,9 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": ["logging", "agent", "jsonl", "structured-logging", "llm"],
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.3"
+  }
 }

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "/home/lxx/.local/bin/serena",
+      "args": [
+        "start-mcp-server",
+        "--transport",
+        "stdio",
+        "--project-from-cwd"
+      ]
+    }
+  }
+}
