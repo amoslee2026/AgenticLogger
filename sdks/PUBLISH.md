@@ -51,6 +51,24 @@ are excluded via `[tool.hatch.build.targets.sdist]` in `pyproject.toml`.
 
 ## CI publishing
 
-Add a separate `release.yml` workflow (gated on tag push) that runs the three
-publish steps with registry secrets. Keep secrets in GitHub Actions secrets
-(`CRATES_IO_TOKEN`, `NPM_TOKEN`, `PYPI_TOKEN`) — **never** in-repo.
+`.github/workflows/release.yml` publishes all three targets on version tags —
+**the git tag is the single source of truth** for the version (it syncs the
+version into each manifest before building). Trigger a release with:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Add these secrets in GitHub → Settings → Secrets and variables → Actions
+(never commit them — the repo is public):
+
+| Secret | Registry | Token source |
+|--------|----------|--------------|
+| `NPM_TOKEN` | npm | https://www.npmjs.com → Access Tokens |
+| `PYPI_TOKEN` | PyPI | PyPI → Account → API tokens (scope: agentic-logger) |
+| `CARGO_REGISTRY_TOKEN` | crates.io | https://crates.io/settings/tokens |
+
+PyPI can alternatively use **trusted publishing** (OIDC, no token): enable it
+under PyPI → Project → Publishing → Add a new trusted publisher for this
+repo + `release.yml` workflow, then delete the `password:` line in the
+`publish-pypi` job.
