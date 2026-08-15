@@ -1,47 +1,82 @@
 name: Release
 
-# Publish agentic-logger to npm, PyPI and crates.io.
+# Auto-publish agentic-logger to npm, PyPI and crates.io on every push to main.
 #
-# Two triggers:
-#   1. Version tag push — the tag is the single source of truth for the version.
-#        git tag v0.1.0 && git push origin v0.1.0
-#   2. workflow_dispatch (manual) — reuses the version already in each manifest.
-#        Useful to publish a registry whose token arrived later, without
-#        bumping the other registries.
+#   • push to main   → auto-bump the PATCH version (0.1.0 → 0.1.1) across the
+#                      three manifests, publish all three registries, then
+#                      commit the version bump back as `[skip ci]`.
+#   • commit message starting with `[skip ci]` → skipped (prevents loops and
+#                      gives you an opt-out for docs-only changes).
+#   • workflow_dispatch (manual) → re-publish the current manifest version to
+#                      one chosen registry (no bump). Use it to retry a failed
+#                      publish without wasting a version number.
 #
-# Jobs whose token is absent are skipped (not failed), via the `check` job —
-# GitHub forbids reading `secrets` directly in a job/step `if:`.
+# Major/minor bumps are manual: edit the version in pyproject.toml before
+# pushing; the workflow bumps only the patch segment from there.
 #
-# Required repository secrets (GitHub → Settings → Secrets and variables →
-# Actions). Never commit them — this repo is public.
-#
-#   NPM_TOKEN            npm publish token (https://www.npmjs.com → Access Tokens)
-#   CARGO_REGISTRY_TOKEN crates.io API token (https://crates.io/settings/tokens)
-#
-# PyPI uses trusted publishing (OIDC, no token): enabled under
-# PyPI → Project → Publishing → Add a new trusted publisher for
-# amoslee2026/AgenticLogger, workflow name `release.yml`. The pypi job needs
-# no secret and is therefore always eligible.
+# Secrets (GitHub → Settings → Secrets and variables → Actions), never in-repo:
+#   NPM_TOKEN            npm token (https://www.npmjs.com → Access Tokens)
+#   CARGO_REGISTRY_TOKEN crates.io token (https://crates.io/settings/tokens)
+# PyPI uses trusted publishing (OIDC, no token) — see PyPI → Project →
+# Publishing → trusted publisher for amoslee2026/AgenticLogger + release.yml.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
     inputs:
       target:
-        description: "Registry to publish (tag pushes publish all configured registries)"
+        description: "Registry to publish (push publishes all)"
         required: true
         type: choice
-        default: npm
-        options: [npm, pypi, crates]
+        default: all
+        options: [all, npm, pypi, crates]
 
 permissions:
-  contents: read
-  # Only needed for PyPI trusted publishing (OIDC); harmless with API tokens.
+  contents: write
+  # Required for PyPI trusted publishing (OIDC).
   id-token: write
 
 jobs:
+  bump:
+    name: Prepare version
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      sha: ${{ steps.done.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Bump patch version (push only)
+        id: bump
+        run: |
+          CUR=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            IFS='.' read -r M m p <<< "$CUR"
+            NEW="$M.$m.$((p + 1))"
+            sed -i "0,/^version = .*/s//version = \"$NEW\"/" pyproject.toml
+            (cd sdks/ts && npm version "$NEW" --no-git-tag-version)
+            sed -i "0,/^version = .*/s//version = \"$NEW\"/" sdks/rust/Cargo.toml
+          else
+            NEW="$CUR"
+          fi
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "NEW_VERSION=$NEW" >> "$GITHUB_ENV"
+      - name: Commit + push version bump
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml sdks/ts/package.json sdks/ts/package-lock.json sdks/rust/Cargo.toml
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]" || echo "no version change to commit"
+          git push origin HEAD
+      - name: Record sha
+        id: done
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   check:
     name: Detect configured registries
     runs-on: ubuntu-latest
@@ -76,25 +111,17 @@ jobs:
 
   publish-npm:
     name: Publish npm (agentic-logger)
-    needs: check
+    needs: [bump, check]
     if: needs.check.outputs.npm == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-      - name: Resolve version
-        working-directory: sdks/ts
-        run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION=$(node -p "require('./package.json').version")
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
       - name: Install + build
         working-directory: sdks/ts
         run: npm ci && npm run build
@@ -106,25 +133,18 @@ jobs:
 
   publish-pypi:
     name: Publish PyPI (agentic-logger)
-    needs: check
+    needs: [bump, check]
     if: needs.check.outputs.pypi == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install uv
         run: pip install uv
-      - name: Resolve version
-        run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          sed -i "0,/^version = .*/s//version = \"$VERSION\"/" pyproject.toml
       - name: Build
         run: uv build
       - name: Publish to PyPI
@@ -132,22 +152,14 @@ jobs:
 
   publish-crates:
     name: Publish crates.io (agentic-logger)
-    needs: check
+    needs: [bump, check]
     if: needs.check.outputs.crates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
-      - name: Resolve version
-        working-directory: sdks/rust
-        run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          sed -i "0,/^version = .*/s//version = \"$VERSION\"/" Cargo.toml
       - name: Publish
         working-directory: sdks/rust
         run: cargo publish --allow-dirty --registry crates-io --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
