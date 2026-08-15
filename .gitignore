@@ -56,6 +56,11 @@ CLAUDE.md
 # Serena 语义分析缓存
 .serena/
 
+# pi 本地环境（不入 public repo）
+.pi/
+AGENTS.md
+sdks/ts/@earendil-works
+
 # ── Cross-language SDK build artifacts ──
 # Rust
 sdks/rust/target/
