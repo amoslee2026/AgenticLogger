@@ -1,11 +1,16 @@
 name: Release
 
-# Publish agentic-logger to npm, PyPI and crates.io on version tags.
+# Publish agentic-logger to npm, PyPI and crates.io.
 #
-# Usage: tag the release commit and push it — the tag is the single source of
-# truth for the version (no manual version bumps in the three manifests).
+# Two triggers:
+#   1. Version tag push — the tag is the single source of truth for the version.
+#        git tag v0.1.0 && git push origin v0.1.0
+#   2. workflow_dispatch (manual) — reuses the version already in each manifest.
+#        Useful to publish a registry whose token arrived later, without
+#        bumping the other registries.
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+# Jobs whose token is absent are skipped (not failed), via the `check` job —
+# GitHub forbids reading `secrets` directly in a job/step `if:`.
 #
 # Required repository secrets (GitHub → Settings → Secrets and variables →
 # Actions). Never commit them — this repo is public.
@@ -22,6 +27,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,9 +35,28 @@ permissions:
   id-token: write
 
 jobs:
+  check:
+    name: Detect configured registries
+    runs-on: ubuntu-latest
+    outputs:
+      npm: ${{ steps.detect.outputs.npm }}
+      pypi: ${{ steps.detect.outputs.pypi }}
+      crates: ${{ steps.detect.outputs.crates }}
+    steps:
+      - id: detect
+        env:
+          HAS_NPM: ${{ secrets.NPM_TOKEN }}
+          HAS_PYPI: ${{ secrets.PYPI_TOKEN }}
+          HAS_CRATES: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          echo "npm=$([[ -n "$HAS_NPM" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "pypi=$([[ -n "$HAS_PYPI" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "crates=$([[ -n "$HAS_CRATES" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   publish-npm:
     name: Publish npm (agentic-logger)
-    if: ${{ secrets.NPM_TOKEN != '' }}
+    needs: check
+    if: needs.check.outputs.npm == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,10 +64,15 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
-      - name: Sync version from tag
+      - name: Resolve version
         working-directory: sdks/ts
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
       - name: Install + build
         working-directory: sdks/ts
@@ -55,7 +85,8 @@ jobs:
 
   publish-pypi:
     name: Publish PyPI (agentic-logger)
-    if: ${{ secrets.PYPI_TOKEN != '' }}
+    needs: check
+    if: needs.check.outputs.pypi == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,9 +95,14 @@ jobs:
           python-version: "3.12"
       - name: Install uv
         run: pip install uv
-      - name: Sync version from tag
+      - name: Resolve version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           sed -i "0,/^version = .*/s//version = \"$VERSION\"/" pyproject.toml
       - name: Build
         run: uv build
@@ -78,15 +114,21 @@ jobs:
 
   publish-crates:
     name: Publish crates.io (agentic-logger)
-    if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+    needs: check
+    if: needs.check.outputs.crates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Sync version from tag
+      - name: Resolve version
+        working-directory: sdks/rust
         run: |
-          cd sdks/rust
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           sed -i "0,/^version = .*/s//version = \"$VERSION\"/" Cargo.toml
       - name: Publish
         working-directory: sdks/rust
