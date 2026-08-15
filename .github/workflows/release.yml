@@ -16,12 +16,12 @@ name: Release
 # Actions). Never commit them — this repo is public.
 #
 #   NPM_TOKEN            npm publish token (https://www.npmjs.com → Access Tokens)
-#   PYPI_TOKEN           PyPI API token, scoped to agentic-logger
 #   CARGO_REGISTRY_TOKEN crates.io API token (https://crates.io/settings/tokens)
 #
-# PyPI may instead use trusted publishing (OIDC, no token): enable it under
-# PyPI → Project → Publishing → Add a new trusted publisher for this
-# repo + workflow, then delete the `password:` line below.
+# PyPI uses trusted publishing (OIDC, no token): enabled under
+# PyPI → Project → Publishing → Add a new trusted publisher for
+# amoslee2026/AgenticLogger, workflow name `release.yml`. The pypi job needs
+# no secret and is therefore always eligible.
 
 on:
   push:
@@ -53,7 +53,6 @@ jobs:
       - id: detect
         env:
           HAS_NPM: ${{ secrets.NPM_TOKEN }}
-          HAS_PYPI: ${{ secrets.PYPI_TOKEN }}
           HAS_CRATES: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -61,14 +60,13 @@ jobs:
           else
             TARGET="all"
           fi
-          npm=false; pypi=false; crates=false
+          npm=false; pypi=true; crates=false
           case "$TARGET" in
             npm)    npm=$([[ -n "$HAS_NPM"   ]] && echo true || echo false) ;;
-            pypi)   pypi=$([[ -n "$HAS_PYPI" ]] && echo true || echo false) ;;
+            pypi)   ;;  # trusted publishing needs no token, always eligible
             crates) crates=$([[ -n "$HAS_CRATES" ]] && echo true || echo false) ;;
             all)
               npm=$([[ -n "$HAS_NPM"   ]] && echo true || echo false)
-              pypi=$([[ -n "$HAS_PYPI" ]] && echo true || echo false)
               crates=$([[ -n "$HAS_CRATES" ]] && echo true || echo false)
               ;;
           esac
