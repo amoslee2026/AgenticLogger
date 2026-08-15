@@ -31,6 +31,7 @@ permissions:
 jobs:
   publish-npm:
     name: Publish npm (agentic-logger)
+    if: ${{ secrets.NPM_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +55,7 @@ jobs:
 
   publish-pypi:
     name: Publish PyPI (agentic-logger)
+    if: ${{ secrets.PYPI_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +78,7 @@ jobs:
 
   publish-crates:
     name: Publish crates.io (agentic-logger)
+    if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
