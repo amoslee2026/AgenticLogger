@@ -18,6 +18,7 @@ document wins.
 | TypeScript / JavaScript | [`ts/`](./ts) | `agentic-logger` (npm, ESM + types) | write |
 | SystemVerilog | [`systemverilog/`](./systemverilog) | `agentic_logger_pkg.sv` + DPI-C | write |
 | Verilog-2001 | [`systemverilog/agentic_logger_v2001.v`](./systemverilog/agentic_logger_v2001.v) | `\`include` subset | write (limited) |
+| Tcl | [`tcl/`](./tcl) | `agentic_logger.tcl` (sourceable) | write |
 
 ## Why byte-compatibility is non-trivial
 
@@ -40,13 +41,13 @@ and confirms the Python CLI reads it. Run `python3 tests/cross_lang/validate.py
 
 ## Quick API map (all SDKs)
 
-| Concept | Python | Bash | Rust | Go | TS/JS | SystemVerilog |
-|---|---|---|---|---|---|---|
-| Create | `AgentLogger(...)` | `agentic_init ...` | `AgentLogger::new(...)` | `New(...)` | `new AgentLogger({...})` | `new(...)` |
-| Info | `.info(...)` | `agentic_info` | `.info` | `.Info` | `.info` | `.info` |
-| Error | `.error(...)` | `agentic_error` | `.error` | `.Error` | `.error` | `.error` |
-| Tool call | `.tool_call(...)` | `agentic_tool_call` | `.tool_call` | `.ToolCall` | `.toolCall` | `.tool_call` |
-| File op | `.file_op(...)` | `agentic_file_op` | `.file_op` | `.FileOp` | `.fileOp` | `.file_op` |
-| Error codes | `ErrorCode.X` | `$AGENTIC_EC_X` | `ErrorCode::X` | `ErrX` | `ErrorCode.X` | string literal |
+| Concept | Python | Bash | Rust | Go | TS/JS | SystemVerilog | Tcl |
+|---|---|---|---|---|---|---|---|
+| Create | `AgentLogger(...)` | `agentic_init ...` | `AgentLogger::new(...)` | `New(...)` | `new AgentLogger({...})` | `new(...)` | `agentic_init ...` |
+| Info | `.info(...)` | `agentic_info` | `.info` | `.Info` | `.info` | `.info` | `agentic_info` |
+| Error | `.error(...)` | `agentic_error` | `.error` | `.Error` | `.error` | `.error` | `agentic_error` |
+| Tool call | `.tool_call(...)` | `agentic_tool_call` | `.tool_call` | `.ToolCall` | `.toolCall` | `.tool_call` | `agentic_tool_call` |
+| File op | `.file_op(...)` | `agentic_file_op` | `.file_op` | `.FileOp` | `.fileOp` | `.file_op` | `agentic_file_op` |
+| Error codes | `ErrorCode.X` | `$AGENTIC_EC_X` | `ErrorCode::X` | `ErrX` | `ErrorCode.X` | string literal | `$::agentic_ec(X)` |
 
 See each SDK's README for idiomatic usage, install, and limitations.
