@@ -3,7 +3,7 @@
 # against the interchange contract, and confirm the Python query layer reads it.
 #
 # Exit non-zero if ANY SDK fails validation or Python interop.
-# Requires: bash, cargo, go, bun (or node), python3 (+ agentic_logger), verilator+gcc (SV, optional).
+# Requires: bash, cargo, go, bun (or node), python3 (+ agentic_logger), tclsh, verilator+gcc (SV, optional).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SDKS="$ROOT/sdks"
@@ -80,6 +80,28 @@ if command -v verilator >/dev/null && command -v gcc >/dev/null; then
   fi
 else
   SV_OK=0; echo "  (verilator/gcc not installed; skipping)"
+fi
+
+# --- Tcl (optional — needs tclsh) ---
+echo "[tcl]"
+if command -v tclsh >/dev/null; then
+  D="$TMP/tcl"; mkdir -p "$D"
+  if ( cd "$SDKS/tcl" && tclsh examples/emit.tcl "$D" >/dev/null 2>&1 ); then
+    F="$(ls "$D"/*.jsonl)" && validate "$F" 9 cafebabe && pyreads "$D" && ok "tcl emits valid JSONL, Python reads it" \
+      || bad "tcl"
+  else
+    bad "tcl (emit failed)"
+  fi
+  # compact mode (contract §4)
+  DC="$TMP/tcl_compact"; mkdir -p "$DC"
+  if ( cd "$SDKS/tcl" && COMPACT=1 tclsh examples/emit.tcl "$DC" >/dev/null 2>&1 ); then
+    FC="$(ls "$DC"/*.jsonl)"
+    grep -q '"l": "INFO"' "$FC" && validate "$FC" 9 cafebabe && ok "tcl compact mode valid" || bad "tcl compact"
+  else
+    bad "tcl compact (emit failed)"
+  fi
+else
+  bad "tcl (tclsh not installed)"
 fi
 
 # --- compact-mode interop (TS compact file → Python stats) ---
