@@ -95,12 +95,14 @@ proc _agentic_gen_rid {} {
 proc _agentic_ck {key} {
     global agentic_compact
     if {![info exists agentic_compact] || !$agentic_compact} { return $key }
-    switch -- $key {
+    set map {
         ts t  level l  module n  msg m  pid p  rid r  seq q  error_code e
         dur d  tool o   cmd c     exit x  op w   path h  ctx z  tid i
         lines s  funcs f  lang g  choice k  alts a  reason u  stdout v  stderr b
-        ok y  size j  default { return $key }
+        ok y  size j
     }
+    if {[dict exists $map $key]} { return [dict get $map $key] }
+    return $key
 }
 
 # Serialize a Tcl list of strings into a JSON array of strings.
