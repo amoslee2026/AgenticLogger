@@ -1,7 +1,7 @@
 # AgenticLogger Cross-Language Interchange Format
 
 **Status**: Canonical contract — single source of truth for every language SDK.
-**Goal**: A log file written by *any* SDK (Python, Rust, Go, TS/JS, Bash, SystemVerilog) MUST be readable byte-for-byte by the Python query layer (`cli` / `mcp_server` / `JSONLBackend.query|stats|tail`).
+**Goal**: A log file written by *any* SDK (Python, Rust, Go, TS/JS, Bash, SystemVerilog, Verilog-2001, Tcl) MUST be readable byte-for-byte by the Python query layer (`cli` / `mcp_server` / `JSONLBackend.query|stats|tail`).
 
 If this document and a language SDK disagree, **this document wins** and the SDK is buggy.
 
