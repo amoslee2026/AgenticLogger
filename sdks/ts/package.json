@@ -1,6 +1,6 @@
 {
   "name": "agentic-logger",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Structured logging SDK for Coding Agents — byte-compatible JSONL with the AgenticLogger Python query layer",
   "license": "MIT",
   "author": "AgenticLogger contributors",

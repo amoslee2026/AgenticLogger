@@ -1,6 +1,6 @@
 [project]
 name = "agentic-logger"
-version = "0.1.1"
+version = "0.1.2"
 description = "Structured logging for Coding Agents - write once, read efficiently"
 requires-python = ">=3.10"
 license = "MIT"
