@@ -5,6 +5,10 @@
 # probes, so tests/cross_lang/validate.py can assert byte-compatibility.
 source [file join [file dirname [info script]] .. agentic_logger.tcl]
 
+if {[info exists ::env(COMPACT)] && $::env(COMPACT) eq "1"} {
+    set ::agentic_compact 1
+}
+
 set dir [lindex $argv 0]
 if {$dir eq ""} { set dir "/tmp/xlang_tcl" }
 
