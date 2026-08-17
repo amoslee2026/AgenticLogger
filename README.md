@@ -77,7 +77,7 @@ python -c "from agentic_logger import AgentLogger; print('OK')"
 ## Multi-Language SDKs
 
 AgenticLogger ships write-side SDKs for **Bash, Rust, Go, TypeScript/JavaScript,
-and SystemVerilog/Verilog**. Every SDK emits the **same byte-compatible JSONL**,
+SystemVerilog/Verilog, and Tcl**. Every SDK emits the **same byte-compatible JSONL**,
 so logs written by any of them are read by the Python query layer (`cli` /
 `mcp_server`) with zero conversion.
 
@@ -88,6 +88,7 @@ so logs written by any of them are read by the Python query layer (`cli` /
 | Go | [`sdks/go`](sdks/go) | `github.com/agenticlogger/agentic-logger-go` |
 | TypeScript / JavaScript | [`sdks/ts`](sdks/ts) | `agentic-logger` (npm, ESM + types) |
 | SystemVerilog / Verilog | [`sdks/systemverilog`](sdks/systemverilog) | `agentic_logger_pkg.sv` + DPI-C |
+| Tcl | [`sdks/tcl`](sdks/tcl) | `agentic_logger.tcl` (sourceable) |
 
 The canonical byte-level contract that all SDKs share is
 [`sdks/INTERCHANGE.md`](sdks/INTERCHANGE.md). The key invariant: separators are
