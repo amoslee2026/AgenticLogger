@@ -4,13 +4,16 @@
 """
 
 
-import pytest
+import json
+from pathlib import Path
 
+import pytest
 from agentic_logger import AgentLogger, ErrorCode
 from agentic_logger.mcp_server import (
     _resolve_time,
     create_server,
     handle_query,
+    _fmt_cell,
     handle_stats,
     handle_trace,
     handle_traceback,
@@ -406,6 +409,107 @@ class TestMainRuntime:
         async def fake_run(self, *a, **k):
             return None
         monkeypatch.setattr(srv_mod.Server, "run", fake_run)
-
         m.main()  # completes without hanging
+
+
+
+class TestFmtCellTimestampRegression:
+    """Regression: the old ``"T" in s`` timestamp heuristic corrupted any
+    message containing a capital T (``dry_run=True``, ``TSLA``, ``TypeError``)
+    into an 8-char mid-message slice — production fragments ``ol=5 kno``,
+    ``（STOCKIN``, ``tched=23`` were all exactly ``msg[11:19]``.
+    """
+
+    def test_iso_timestamp_still_truncated(self):
+        assert _fmt_cell("2026-09-11T13:04:15.714+00:00") == "13:04:15"
+
+    def test_message_with_capital_t_is_not_sliced(self):
+        # Exact message shapes observed in production logs (bombyx 2026-09-11).
+        for msg in (
+            "pass 开始: pool=5 known_slugs=234 dry_run=True",
+            "[social] 跳过（STOCKINTEL_SOCIAL≠1；降频策略：仅 21:00 那一轮采集微博）",
+            "pass 完成: fetched=106 sources={'TSLA:announcements': 'ok'}",
+            "[weibo] evaluate 无文本返回 (/api/container/getIndex): TypeError: Failed to fetch",
+        ):
+            assert _fmt_cell(msg) == msg
+
+    def test_too_short_for_timestamp_untouched(self):
+        assert _fmt_cell("T") == "T"
+        assert _fmt_cell("2026-09") == "2026-09"
+
+
+class TestCompactLongMessageRoundTrip:
+    """End-to-end: compact JSONL with a long CJK message (>200 chars, fullwidth
+    brackets/quotes + emoji) must survive query byte-identically with the
+    correct row count; a corrupt (truncated) line is skipped whole — never
+    emitted as fragment rows.
+    """
+
+    MODULE = "scraper.stockintel.collect"
+    LONG_MSG = (
+        "[social] 跳过（STOCKINTEL_SOCIAL≠1；降频策略：仅 21:00 那一轮采集微博，"
+        "降低 IP/封号风险；dry_run=True 时直接跳过，参见 TSLA:announcements 与 "
+        "TypeError 案例）「全角引号」【书名号】🙏；再补一段确保超过两百字符："
+        "A股热点板块、量化因子、北向资金、融资融券、龙虎榜数据均于收盘后统一入库，"
+        "任何含大写 T 的消息都不得被误当作时间戳截断成中段碎片。"
+    )
+
+    ENTRIES = [
+        {
+            "l": "INFO", "m": LONG_MSG, "n": MODULE,
+            "t": "2026-09-11T07:46:23.142+00:00", "p": "758377", "r": "abc123ab", "q": 1,
+        },
+        {
+            "l": "INFO", "m": "pass 开始: pool=5 known_slugs=234 dry_run=True", "n": MODULE,
+            "t": "2026-09-11T07:46:24.142+00:00", "p": "758377", "r": "abc123ab", "q": 2,
+        },
+        {
+            "l": "INFO", "m": "[xueqiu] 跳过（STOCKINTEL_XUEQIU≠1）", "n": MODULE,
+            "t": "2026-09-11T07:46:25.142+00:00", "p": "758377", "r": "abc123ab", "q": 3,
+        },
+    ]
+
+    def _write_fixture(self, log_dir: Path) -> Path:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / "fixture_compact.jsonl"
+        with open(path, "w", encoding="utf-8") as f:
+            for e in self.ENTRIES:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+            # Corrupt tail: a line truncated mid-write (invalid JSON) — including
+            # at EOF without a trailing newline.
+            f.write('{"l": "INFO", "m": "pass 开始: pool=5 kno')
+        return path
+
+    def test_long_cjk_message_roundtrip_byte_identical(self, tmp_path):
+        assert len(self.LONG_MSG) > 200  # fixture sanity
+        self._write_fixture(tmp_path)
+
+        res = handle_query(tmp_path, module=self.MODULE, depth="full", format="jsonl")
+        assert res["count"] == len(self.ENTRIES)  # corrupt line skipped, 3 rows
+
+        expected_bytes = {e["m"].encode("utf-8") for e in self.ENTRIES}
+        msgs = [e["msg"] for e in res["logs"]]
+        assert {m.encode("utf-8") for m in msgs} == expected_bytes  # byte-identical
+        assert len(msgs) == len(self.ENTRIES)  # no extra fragment rows
+
+    def test_corrupt_line_yields_no_fragment_rows_via_narrowed_path(self, tmp_path):
+        self._write_fixture(tmp_path)
+        # Exact-match module filter exercises the byte-narrowed scan path.
+        res = handle_query(tmp_path, module=self.MODULE, format="tsv")
+        table_lines = res["table"].splitlines()
+        assert len(table_lines) == len(self.ENTRIES) + 1  # header + intact rows
+        for line in table_lines[1:]:
+            msg_col = line.split("\t")[1]
+            assert msg_col.encode("utf-8") in {e["m"].encode("utf-8") for e in self.ENTRIES} \
+                or msg_col == self.LONG_MSG[:80] + "..."
+
+    def test_fragment_artifacts_absent_in_table(self, tmp_path):
+        self._write_fixture(tmp_path)
+        res = handle_query(tmp_path, module="scraper.stockintel.*", format="tsv")
+        assert res["count"] == len(self.ENTRIES)
+        assert "ol=5 kno\t" not in res["table"]
+        assert "dry_run=True\t" in res["table"]  # full msg survives in TSV
+        assert res["table"].splitlines()[0] == "L\tmessage\tsource\ttime\tpid\trid\t#"
+        # Real timestamps in the ts column are still HH:MM:SS-truncated.
+        assert "07:46:23" in res["table"]
 

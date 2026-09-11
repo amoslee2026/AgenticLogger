@@ -363,14 +363,20 @@ def _format_entries_table(entries: list[dict], variant: str = "tsv") -> str:
 def _fmt_cell(value: object) -> str:
     """Format a single table cell — truncate timestamps, cap strings."""
     s = str(value) if value is not None else ""
-    # Truncate ISO timestamps to HH:MM:SS
-    if "T" in s and len(s) >= 19:
+    # Truncate ISO timestamps to HH:MM:SS.  Must validate the shape: the
+    # previous ``"T" in s`` heuristic also matched ordinary messages that
+    # merely contain a capital T (e.g. ``dry_run=True``, ``TSLA``,
+    # ``TypeError``) and sliced them to an 8-char mid-message fragment.
+    if _ISO_TS_RE.match(s):
         s = s[11:19]
     # Cap long strings
     if len(s) > 80:
         s = s[:80] + "..."
     # Escape tabs (shouldn't appear in log values, but defensive)
     return s.replace("\t", " ").replace("\n", " ").replace("|", "/")
+
+
+_ISO_TS_RE: re.Pattern[str] = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 
 def _generate_smart_summary(entries: list[dict]) -> dict:
