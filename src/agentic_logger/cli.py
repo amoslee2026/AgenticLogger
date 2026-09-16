@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.metadata
 import json
 import sys
 import time
@@ -341,6 +342,11 @@ def cmd_list_files(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {importlib.metadata.version('agentic-logger')}",
+    )
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="agentic-logger",
