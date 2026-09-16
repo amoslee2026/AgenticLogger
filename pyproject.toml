@@ -3,7 +3,7 @@ name = "agentic-logger"
 version = "0.1.3"
 description = "Structured logging for Coding Agents - write once, read efficiently"
 requires-python = ">=3.10"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "AgenticLogger contributors" }]

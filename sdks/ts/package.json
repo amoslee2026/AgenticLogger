@@ -2,7 +2,7 @@
   "name": "agentic-logger",
   "version": "0.1.3",
   "description": "Structured logging SDK for Coding Agents — byte-compatible JSONL with the AgenticLogger Python query layer",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "author": "AgenticLogger contributors",
   "repository": {
     "type": "git",
