@@ -30,7 +30,7 @@ A multi-process information aggregation pipeline (scrapers → LLM extraction �
 | LLM token cost | Raw-text formatting overhead | **TSV output ~46% smaller than JSONL** |
 | Cross-process tracing | Manual timestamp correlation | `trace --rid` walks call chains across files |
 | Aggregation | Hand-rolled `awk` | `stats --group-by error_code/module/tool` |
-| Third-party logs (httpx/urllib3/...) | Each library logs independently | Unified into one JSONL via `_StdLogForwardingHandler` |
+| Third-party logs (httpx/urllib3/...) | Each library logs independently | Forwarded into the same JSONL via a stdlib handler (deployment-local helper, not shipped) |
 
 **Outcome**: `stats --group-by error_code` immediately surfaced a real bug — `FRONTMATTER_TOO_DEEP` (metadata nesting exceeded the storage backend's depth limit) across 57 ERROR entries — diagnosed in a single LLM turn instead of multi-step `grep` chains.
 
@@ -54,7 +54,7 @@ pip install "agentic-logger[mcp]"
 ### From Source (Development)
 
 ```bash
-git clone https://github.com/your-org/AgenticLogger.git
+git clone https://github.com/amoslee2026/AgenticLogger.git
 cd AgenticLogger
 uv sync --extra dev --extra mcp
 ```
@@ -130,7 +130,6 @@ logger = AgentLogger(
     circular=True,
     max_size_mb=500,      # Rotate when file exceeds 500MB
     max_files=10,         # Keep last 10 files (JSONL)
-    retention_hours=24,   # Keep last 24h (SQLite)
 )
 ```
 
@@ -295,24 +294,24 @@ Microsecond precision prevents collisions when multiple instances start in the s
 #### Programmatic Configuration
 
 ```python
-from agentic_logger import AgentLogger
-from agentic_logger.storage import JSONLStorage, SQLiteStorage
+from pathlib import Path
 
-# Custom JSONL storage
-storage = JSONLStorage(
+from agentic_logger import AgentLogger
+from agentic_logger.storage import JSONLBackend, SQLiteBackend
+
+# Backend selection via string — AgentLogger builds the backend internally
+logger = AgentLogger(
+    program="my_agent",
+    command="run",
     log_dir="./custom_logs",
+    storage="jsonl",      # or "sqlite", or "auto" (default)
     circular=True,
     max_size_mb=100,
     max_files=5,
 )
-logger = AgentLogger(program="my_agent", command="run", storage=storage)
 
-# Custom SQLite storage
-storage = SQLiteStorage(
-    log_dir="./custom_logs",
-    retention_hours=48,
-)
-logger = AgentLogger(program="my_agent", command="run", storage=storage)
+# Backend classes are exported for custom integrations:
+backend = SQLiteBackend(file_path=Path("./logs/my.sqlite"), global_ctx={"program": "my_agent"})
 ```
 
 #### Self-Observability (Dogfooding)
@@ -423,145 +422,23 @@ ErrorCode.RES_MEMORY      # Resource exhaustion
 ErrorCode.UNKNOWN         # Fallback
 ```
 
-See `spec/02-log-format.md §9` for the complete error code list.
+See `src/agentic_logger/error_codes.py` for the complete error code list.
 
-## Storage Backends
 
-### JSONL (Default)
 
-```python
-logger = AgentLogger(program="my_agent", storage="jsonl")
-# Output: logs/my_agent_pid12345_20260721_133834.jsonl
-```
-
-- Streaming append (safe for `tail -f`)
-- Circular rotation with configurable retention
-- Compatible with `grep`/`jq`
-
-### SQLite + WAL
-
-```python
-logger = AgentLogger(program="my_agent", storage="sqlite")
-# Output: logs/my_agent_pid12345_20260721_133834.sqlite
-```
-
-- WAL mode for concurrent reads during writes
-- Indexed queries on `rid`, `level`, `module`, `error_code`, `tool`
-- Thread-safe via `threading.Lock`
-- Auto-selected for `build`/`test`/`ci` commands
-
-### Auto Selection
-
-```python
-logger = AgentLogger(program="my_agent", storage="auto")  # default
-```
-
-Rules (first match wins):
-1. Env var `AGENTIC_STORAGE` overrides all
-2. Multi-process environment → SQLite
-3. Existing `.sqlite` files for same program → SQLite
-4. Command keywords (`build`, `test`, `ci`, ...) → SQLite
-5. Default → JSONL
-
-## Reading Logs
-
-### MCP Server (for AI Agents)
-
-```bash
-# Start MCP server (stdio transport)
-agentic-logger-mcp --log-dir ./logs
-```
-
-Available tools:
-
-| Tool | Description |
-|------|-------------|
-| `agentic_log_query` | Multi-field filtered search (20+ params) |
-| `agentic_log_trace` | Full trace by `rid` |
-| `agentic_log_stats` | Aggregated statistics |
-| `agentic_log_traceback` | Stack trace by `tid` |
-
-### CLI (for Humans)
-
-```bash
-# Query with filters
-agentic-logger query --level ERROR --since 1h
-agentic-logger query --module "agent.*" --error-code IO_NOT_FOUND
-agentic-logger query --tool bash --exit-code 1 --min-dur 1000
-
-# Trace a full run
-agentic-logger trace --rid abc12345 --include-traceback
-
-# Statistics
-agentic-logger stats --group-by error_code --since 24h
-
-# Real-time streaming
-agentic-logger tail --follow --level ERROR
-
-# Get stack trace
-agentic-logger traceback --tid tb_053dff45
-
-# List log files
-agentic-logger list-files
-```
-
-### Python SDK (for Programs)
-
-```python
-from agentic_logger.mcp_server import handle_query, handle_trace, handle_stats
-from pathlib import Path
-
-log_dir = Path("./logs")
-
-# Query
-result = handle_query(log_dir, level="ERROR", since="1h")
-
-# Trace
-result = handle_trace(log_dir, rid="abc12345", include_traceback=True)
-
-# Stats
-result = handle_stats(log_dir, group_by="error_code")
-```
-
-## Log File Naming
-
-Format: `{program}_{command}_{YYYYMMDD}_{HHmmssffffff}.{ext}`
-
-Examples:
-- `my_agent_main_20260721_133834090719.jsonl`
-- `build_script_test_20260721_140000123456.sqlite`
-
-Microsecond precision avoids collisions when multiple instances start within the same second.
-
-## Circular Write Mode
-
-For long-running agents, enable circular write to bound file size:
-
-```python
-logger = AgentLogger(
-    program="my_agent",
-    circular=True,
-    max_size_mb=500,      # Rotate when file exceeds 500MB
-    max_files=10,         # Keep last 10 files (JSONL)
-    retention_hours=24,   # Keep last 24h (SQLite)
-)
-```
-
-**JSONL rotation**: Safe rename → create → delete ordering (crash-safe).
-**SQLite cleanup**: Time-based retention + size-based pruning with WAL checkpoint.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              写入层 (AgentLogger SDK)                        │
+│              Write layer (AgentLogger SDK)                  │
 │  AgentLogger.info()  .tool_call()  .error()  ...            │
 │              ↓  Auto-fields: ts/pid/rid/seq                 │
 ├─────────────────────────────────────────────────────────────┤
-│              存储层 (JSONL / SQLite WAL)                     │
+│              Storage layer (JSONL / SQLite WAL)             │
 │  {program}_{cmd}_{date}_{time}.jsonl  |  .sqlite            │
 ├─────────────────────────────────────────────────────────────┤
-│              读取层 (MCP / CLI / SDK)                        │
+│              Read layer (MCP / CLI / SDK)                   │
 │  agentic_log_query  |  agentic-logger query  |  handle_query│
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -582,18 +459,6 @@ uv run pytest tests/ --cov=agentic_logger
 uv run ruff check src/
 ```
 
-## Log Analysis Utilities
-
-The `utils/` directory provides scripts for efficient log analysis (per Token Saving Rules):
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `utils/log_triage.py` | Error-type summary (count + first occurrence) | `./utils/log_triage.py <logfile>` |
-| `utils/log_extract.sh` | Extract ±10-line context around patterns | `./utils/log_extract.sh <logfile> [pattern]` |
-| `utils/agentic_logger.py` | Shared logging utility for Python scripts | `from utils.agentic_logger import get_logger` |
-| `utils/CLAUDE.md` | Index describing each script | Read before writing new scripts |
-
-**Workflow**: Run `log_triage.py` first to identify error types, then `log_extract.sh` to pull context around specific patterns. This avoids reading the full log file.
 
 ## Code Conventions
 
@@ -617,19 +482,6 @@ Source files use inline spec tags for drift detection and grep-based discovery:
 
 **Drift detection**: Before editing code with `@spec-*` tags, read them as constraints. After editing, verify the new behavior still satisfies `@spec-invariant` and matches the section cited in `@spec-ref`. If not, follow the conflict resolution process (present to user, don't silently rewrite specs).
 
-## Design Specifications
-
-Full design documents in `spec/`:
-
-| Document | Description |
-|----------|-------------|
-| `01-architecture.md` | System architecture |
-| `02-log-format.md` | Log entry schema + ErrorCode taxonomy |
-| `03-write-sdk.md` | Write SDK API design |
-| `04-read-interface.md` | Read interfaces (MCP / CLI / SDK) |
-| `05-storage.md` | Storage backends (JSONL / SQLite) |
-| `06-implementation.md` | Implementation plan |
-| `07-testing.md` | Testing strategy |
 
 ## License
 
