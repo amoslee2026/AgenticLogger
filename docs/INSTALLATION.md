@@ -61,6 +61,7 @@ agentic-logger list-files                    # expect logs/smoke_verify_*.jsonl
 agentic-logger query --depth summary         # expect one INFO entry: "installation verified"
 ```
 
+| `unrecognized arguments: --log-dir ...` | `--log-dir` is a global option, must precede the subcommand | `agentic-logger --log-dir ./logs query ...` |
 ## 4. Wire up the MCP server (agent log access)
 
 Add to the MCP config of the agent host (e.g. Claude Code `mcp.json`):
