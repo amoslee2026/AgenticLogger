@@ -342,15 +342,15 @@ def cmd_list_files(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {importlib.metadata.version('agentic-logger')}",
-    )
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="agentic-logger",
         description="AgenticLogger CLI — query, trace, and analyze agent logs",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {importlib.metadata.version('agentic-logger')}",
     )
     parser.add_argument("--log-dir", default="./logs", help="Log directory (default: ./logs)")
 
