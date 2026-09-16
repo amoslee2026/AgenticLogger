@@ -21,7 +21,7 @@ from typing import Optional
 
 # Auto-detect if we're in the main package or utils
 try:
-    from agentic_logger import AgentLogger, ErrorCode
+    from agentic_logger import AgentLogger
     _USE_MAIN_SDK = True
 except ImportError:
     _USE_MAIN_SDK = False
