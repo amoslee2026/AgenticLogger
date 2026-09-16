@@ -31,7 +31,7 @@ The system previously used Python stdlib `logging` writing to plain-text `.log` 
 | **Multi-process aggregation** | N files, manual cross-referencing | `query` auto-aggregates across JSONL files; `trace --rid` walks call chains across processes |
 | **Execution trace** | None (manual timestamp correlation) | `trace --rid` returns full chain + linked traceback |
 | **Aggregation stats** | Hand-rolled awk scripts | `stats --group-by error_code/module/tool` out of the box |
-| **Third-party log capture** | Each library outputs independently | `_StdLogForwardingHandler` unifies httpx/urllib3/etc. into one JSONL with `module=ext:<lib>` |
+| **Third-party log capture** | Each library outputs independently | A deployment-local stdlib handler unified httpx/urllib3/etc. into one JSONL with `module=ext:<lib>` (helper not shipped in the package) |
 | **Observability fields** | Only message text | Structured: `rid`, `pid`, `tid`, `error_code`, `duration_ms`, `tool`, `exit_code`, `op` |
 | **Zero-dependency** | Yes (stdlib) | Requires install |
 | **Human eyeball readability** | Excellent (`tail -f` plain text) | OK (JSON lines, but less intuitive than plain text) |
@@ -57,7 +57,7 @@ A single request can fan out across multiple processes (scraper → HTTP client 
 
 ### 4. Unified Third-Party Capture
 
-httpx, urllib3, gliner, and other libraries each have their own logging output. The `_StdLogForwardingHandler` transparently redirects them into the same JSONL stream, tagged with `module=ext:<lib>`. No pollution of business code.
+httpx, urllib3, gliner, and other libraries each have their own logging output. A small deployment-local logging handler (attached to the root `logging` logger) redirected their records into the same JSONL stream, tagged with `module=ext:<lib>`. No pollution of business code. This helper lived in the deployment, not in the package.
 
 ## Where stdlib `logging` Still Wins
 
