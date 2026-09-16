@@ -485,4 +485,4 @@ Source files use inline spec tags for drift detection and grep-based discovery:
 
 ## License
 
-MIT
+PolyForm Noncommercial 1.0.0 — free for personal and noncommercial use; **commercial use requires a separate license from the author** ([Universe Zero](https://github.com/amoslee2026)). Contributions via PR are welcome and are licensed under the same terms. Prior releases (≤ 0.1.3) were published under MIT and remain MIT-licensed.
