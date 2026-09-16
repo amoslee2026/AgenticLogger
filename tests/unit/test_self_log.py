@@ -1,6 +1,5 @@
 """Tests for self-observability — AgenticLogger logging its own read layer.
 
-@spec-ref: (plans/)misty-foraging-turtle.md
 
 Covers: env switch, lazy cached logger, MCP dispatch logging (success +
 error), CLI main logging (success + ValueError), the closed-loop guarantee

@@ -1,6 +1,5 @@
 """Self-observability — AgenticLogger logs its own read-layer operations.
 
-@spec-ref: (plans/)misty-foraging-turtle.md
 @last-changed: 2026-07-27
 @log-module: agentic_logger.self_log
 
