@@ -7,11 +7,11 @@ separators match Python exactly.
 ## Install
 
 ```bash
-go get github.com/agenticlogger/agentic-logger-go
+go get github.com/amoslee2026/AgenticLogger/sdks/go
 ```
 
 ```go
-import agenticlogger "github.com/agenticlogger/agentic-logger-go"
+import agenticlogger "github.com/amoslee2026/AgenticLogger/sdks/go"
 ```
 
 ## Usage
