@@ -14,7 +14,7 @@ document wins.
 | Python (reference) | `../src/agentic_logger` | `agentic-logger` (PyPI) | full (read + write) |
 | Bash | [`bash/`](./bash) | `agentic_logger.sh` (sourceable) | write |
 | Rust | [`rust/`](./rust) | `agentic-logger` crate | write |
-| Go | [`go/`](./go) | `github.com/agenticlogger/agentic-logger-go` | write |
+| Go | [`go/`](./go) | `github.com/amoslee2026/AgenticLogger/sdks/go` | write |
 | TypeScript / JavaScript | [`ts/`](./ts) | `agentic-logger` (npm, ESM + types) | write |
 | SystemVerilog | [`systemverilog/`](./systemverilog) | `agentic_logger_pkg.sv` + DPI-C | write |
 | Verilog-2001 | [`systemverilog/agentic_logger_v2001.v`](./systemverilog/agentic_logger_v2001.v) | `\`include` subset | write (limited) |
