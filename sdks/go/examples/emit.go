@@ -2,7 +2,7 @@ package main
 
 import (
 	"os"
-	"github.com/agenticlogger/agentic-logger-go"
+	"github.com/amoslee2026/AgenticLogger/sdks/go"
 )
 
 func main() {

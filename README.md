@@ -85,7 +85,7 @@ so logs written by any of them are read by the Python query layer (`cli` /
 |-----|------|---------|
 | Bash | [`sdks/bash`](sdks/bash) | `agentic_logger.sh` (sourceable) |
 | Rust | [`sdks/rust`](sdks/rust) | `agentic-logger` crate |
-| Go | [`sdks/go`](sdks/go) | `github.com/agenticlogger/agentic-logger-go` |
+| Go | [`sdks/go`](sdks/go) | `github.com/amoslee2026/AgenticLogger/sdks/go` |
 | TypeScript / JavaScript | [`sdks/ts`](sdks/ts) | `agentic-logger` (npm, ESM + types) |
 | SystemVerilog / Verilog | [`sdks/systemverilog`](sdks/systemverilog) | `agentic_logger_pkg.sv` + DPI-C |
 | Tcl | [`sdks/tcl`](sdks/tcl) | `agentic_logger.tcl` (sourceable) |
