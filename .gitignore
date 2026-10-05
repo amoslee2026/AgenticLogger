@@ -79,3 +79,4 @@ sdks/systemverilog/agentic_logger_dpi.o
 sdks/systemverilog/*.o
 # Cross-lang test scratch
 tests/cross_lang/*.jsonl
+.omp/advisor-ledger/
